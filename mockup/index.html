@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>VoiceMem UI Mockup v2</title>
+<style>
+  :root {
+    --bg: #1c1c1e; --bg-deep: #141416; --surface: #2c2c2e; --surface-hover: rgba(255,255,255,0.04);
+    --border: #38383a; --border-light: #2a2a2c;
+    --text: #f5f5f7; --text-secondary: #8e8e93; --text-tertiary: #636366; --text-muted: #48484a;
+    --accent: #0a84ff; --accent-dim: rgba(10,132,255,0.12);
+    --green: #30d158; --green-dim: rgba(48,209,88,0.12);
+    --orange: #ff9f0a; --orange-dim: rgba(255,159,10,0.12);
+    --purple: #bf5af2; --purple-dim: rgba(191,90,242,0.12);
+    --red: #ff453a; --pink: #ff375f;
+    --player-bg: rgba(28,28,30,0.95);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+    font-size: 13px; color: var(--text); background: #0d0d0d;
+    display: flex; gap: 40px; padding: 40px; flex-wrap: wrap; align-items: flex-start;
+  }
+  .mono { font-family: 'SF Mono', 'Menlo', 'Consolas', monospace; }
+  .mockup-group { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .mockup-label { font-size: 13px; font-weight: 700; color: var(--text-tertiary); letter-spacing: 1px; text-transform: uppercase; }
+
+  /* ===== POPOVER ===== */
+  .popover { width: 320px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+  .popover-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .popover-header .status { display: flex; align-items: center; gap: 8px; }
+  .popover-header .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .popover-header .count { font-size: 12px; color: var(--text-secondary); padding: 2px 8px; background: rgba(255,255,255,0.06); border-radius: 10px; }
+  .popover-section { padding: 12px 16px; }
+  .popover-section + .popover-section { border-top: 1px solid var(--border); }
+  .popover .latest-label { font-size: 11px; color: var(--text-tertiary); margin-bottom: 6px; }
+  .popover .latest-text { font-size: 13px; line-height: 1.5; }
+  .popover .latest-meta { font-size: 11px; color: var(--text-tertiary); margin-top: 4px; }
+  .popover .controls { display: flex; gap: 8px; }
+  .popover .controls button { flex:1; padding:7px 0; border:none; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; }
+  .btn-s { background: var(--surface); color: var(--text); }
+  .btn-s:hover { background: var(--surface-hover); }
+  .btn-a { background: var(--accent); color: white; }
+  .btn-exit { color: var(--text-tertiary); background: none; border: none; font-size: 11px; cursor: pointer; padding: 8px 0; }
+
+  /* ===== MAIN WINDOW ===== */
+  .main-window {
+    width: 820px; height: 760px;
+    background: var(--bg); border-radius: 10px; border: 1px solid var(--border);
+    overflow: hidden; display: flex; flex-direction: column;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  }
+  .titlebar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    background: rgba(44,44,46,0.5); backdrop-filter: blur(20px); flex-shrink: 0;
+  }
+  .titlebar-left { display: flex; align-items: center; gap: 10px; }
+  .titlebar .title { font-size: 15px; font-weight: 600; }
+  .titlebar .date-picker {
+    font-size: 12px; color: var(--text-secondary); background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+  }
+  .titlebar-right { display: flex; align-items: center; gap: 6px; }
+  .icon-btn {
+    background: none; border: none; color: var(--text-tertiary); cursor: pointer;
+    font-size: 13px; padding: 4px 6px; border-radius: 4px;
+  }
+  .icon-btn:hover { background: rgba(255,255,255,0.06); color: var(--text-secondary); }
+
+  /* Status bar */
+  .statusbar {
+    display: flex; align-items: center; gap: 10px; padding: 6px 16px;
+    border-bottom: 1px solid var(--border); background: rgba(44,44,46,0.3);
+    font-size: 11px; flex-shrink: 0;
+  }
+  .rec-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  .wave-bars { display: flex; gap: 1.5px; align-items: center; height: 12px; }
+  .wave-bar { width: 2px; background: var(--green); border-radius: 1px; animation: wave 0.8s ease-in-out infinite; }
+  .wave-bar:nth-child(1){height:4px;animation-delay:0s} .wave-bar:nth-child(2){height:8px;animation-delay:.1s}
+  .wave-bar:nth-child(3){height:12px;animation-delay:.2s} .wave-bar:nth-child(4){height:6px;animation-delay:.3s}
+  @keyframes wave { 0%,100%{transform:scaleY(.5)} 50%{transform:scaleY(1)} }
+  .spacer { flex: 1; }
+
+  /* Main content area */
+  .main-content { display: flex; flex: 1; min-height: 0; }
+
+  /* ===== LEFT PANEL (Timeline) ===== */
+  .timeline-panel {
+    flex: 7; display: flex; flex-direction: column; min-width: 0;
+    border-right: 1px solid var(--border);
+  }
+  .timeline-scroll { flex: 1; overflow-y: auto; }
+  .timeline-scroll::-webkit-scrollbar { width: 6px; }
+  .timeline-scroll::-webkit-scrollbar-track { background: transparent; }
+  .timeline-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* Live section */
+  .live-section { padding: 10px 16px; border-bottom: 1px solid var(--border); background: rgba(48,209,88,0.03); }
+  .live-header { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 1.5s infinite; }
+  .live-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; color: var(--green); text-transform: uppercase; }
+  .live-text { font-size: 13px; line-height: 1.6; color: rgba(48,209,88,0.8); font-style: italic; }
+
+  /* Date group header */
+  .date-header {
+    padding: 8px 16px; font-size: 10px; font-weight: 600; color: var(--text-tertiary);
+    letter-spacing: 0.5px; text-transform: uppercase;
+    position: sticky; top: 0; background: rgba(28,28,30,0.92); backdrop-filter: blur(10px); z-index: 2;
+  }
+
+  /* Transcript row */
+  .tx-row {
+    display: flex; align-items: flex-start; gap: 0; padding: 8px 16px;
+    transition: background 0.1s; cursor: default;
+  }
+  .tx-row:hover { background: var(--surface-hover); }
+
+  .tx-play {
+    width: 28px; height: 28px; border-radius: 50%; border: none;
+    background: var(--accent-dim); color: var(--accent); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; flex-shrink: 0; margin-top: 1px; margin-right: 8px;
+    transition: background 0.15s;
+  }
+  .tx-play:hover { background: rgba(10,132,255,0.25); }
+  .tx-play.playing { background: var(--green-dim); color: var(--green); }
+
+  .tx-time {
+    width: 52px; text-align: right; flex-shrink: 0;
+    font-size: 11px; color: var(--text-tertiary); padding-top: 2px; margin-right: 10px;
+  }
+
+  .tx-dot-col { display: flex; flex-direction: column; align-items: center; width: 12px; flex-shrink: 0; margin-right: 10px; padding-top: 6px; }
+  .tx-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+  .tx-line { width: 1px; flex: 1; min-height: 16px; background: var(--border-light); }
+
+  .tx-body { flex: 1; min-width: 0; padding-bottom: 4px; }
+  .tx-text { font-size: 13px; line-height: 1.6; word-break: break-word; }
+  .tx-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 10px; color: var(--text-muted); }
+  .tag { padding: 1px 5px; border-radius: 3px; font-weight: 500; font-size: 10px; }
+  .tag-zh { background: var(--accent-dim); color: var(--accent); }
+  .tag-en { background: var(--purple-dim); color: var(--purple); }
+  .tag-dur { color: var(--text-muted); }
+
+  /* ===== RIGHT PANEL (Summaries) ===== */
+  .summary-panel {
+    flex: 3; display: flex; flex-direction: column; min-width: 0;
+    background: var(--bg-deep);
+  }
+  .summary-header {
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    font-size: 11px; font-weight: 600; color: var(--text-tertiary);
+    letter-spacing: 0.5px; text-transform: uppercase;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .summary-scroll { flex: 1; overflow-y: auto; padding: 8px; }
+  .summary-scroll::-webkit-scrollbar { width: 4px; }
+  .summary-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .summary-card {
+    padding: 10px 12px; margin-bottom: 8px;
+    background: var(--surface); border-radius: 8px;
+    border: 1px solid var(--border-light);
+    transition: border-color 0.15s;
+    cursor: pointer;
+  }
+  .summary-card:hover { border-color: var(--accent); }
+  .summary-card.active { border-color: var(--accent); background: rgba(10,132,255,0.06); }
+
+  .summary-card .sc-time {
+    font-size: 10px; font-weight: 600; color: var(--text-tertiary);
+    margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .summary-card .sc-count {
+    font-size: 9px; padding: 1px 5px; background: rgba(255,255,255,0.06);
+    border-radius: 8px; color: var(--text-muted);
+  }
+  .summary-card .sc-text { font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
+  .summary-card .sc-ai {
+    display: flex; align-items: center; gap: 4px; margin-top: 6px;
+    font-size: 10px; color: var(--accent); font-weight: 500;
+  }
+  .summary-card.no-summary .sc-text { color: var(--text-muted); font-style: italic; }
+
+  /* ===== PLAYER BAR ===== */
+  .player-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 16px; border-top: 1px solid var(--border);
+    background: var(--player-bg); backdrop-filter: blur(20px); flex-shrink: 0;
+  }
+  .player-btn {
+    width: 28px; height: 28px; border-radius: 50%; border: none;
+    background: var(--accent); color: white; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0;
+  }
+  .player-info { flex: 1; min-width: 0; }
+  .player-info .pi-text { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .player-info .pi-meta { font-size: 10px; color: var(--text-tertiary); }
+  .player-track { flex: 2; display: flex; align-items: center; gap: 6px; }
+  .player-track .pt-time { font-size: 10px; color: var(--text-tertiary); width: 32px; text-align: center; }
+  .player-track .pt-bar { flex: 1; height: 3px; background: var(--surface); border-radius: 2px; position: relative; cursor: pointer; }
+  .player-track .pt-fill { height: 100%; width: 35%; background: var(--accent); border-radius: 2px; }
+  .player-track .pt-thumb {
+    width: 10px; height: 10px; border-radius: 50%; background: white;
+    position: absolute; top: -3.5px; left: calc(35% - 5px);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+
+  /* ===== SETTINGS ===== */
+  .settings-window { width: 420px; background: var(--bg); border-radius: 10px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+  .settings-section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .settings-section:last-child { border-bottom: none; }
+  .section-title { font-size: 10px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+  .settings-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; }
+  .row-label { font-size: 13px; }
+  .row-value { font-size: 12px; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 3px 8px; }
+  .toggle { width: 36px; height: 20px; border-radius: 10px; background: var(--green); position: relative; cursor: pointer; }
+  .toggle .knob { width: 16px; height: 16px; border-radius: 50%; background: white; position: absolute; top: 2px; right: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+  .slider-row { display: flex; align-items: center; gap: 8px; }
+  .slider { flex: 1; height: 3px; background: var(--surface); border-radius: 2px; position: relative; }
+  .slider .fill { height: 100%; background: var(--accent); border-radius: 2px; width: 50%; }
+  .slider .thumb { width: 12px; height: 12px; border-radius: 50%; background: white; position: absolute; top: -4.5px; left: calc(50% - 6px); box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+  .slider-val { font-size: 11px; color: var(--text-secondary); width: 28px; text-align: right; }
+</style>
+</head>
+<body>
+
+<!-- ===== POPOVER ===== -->
+<div class="mockup-group">
+  <div class="mockup-label">Menu Bar Popover</div>
+  <div class="popover">
+    <div class="popover-header">
+      <div class="status"><div class="dot"></div><span style="font-weight:500">录制中</span></div>
+      <button class="btn-exit">退出</button>
+    </div>
+    <div class="popover-section">
+      <div class="latest-label">最近转录</div>
+      <div class="latest-text">明天下午三点跟小王开会，讨论一下 API 设计方案，他说用 REST 比较好</div>
+      <div class="latest-meta">14:32 · 3.2s · zh</div>
+    </div>
+    <div class="popover-section">
+      <div class="controls">
+        <button class="btn-s">⏸ 暂停</button>
+        <button class="btn-a">📋 时间轴</button>
+        <button class="btn-s">⚙ 设置</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MAIN WINDOW ===== -->
+<div class="mockup-group">
+  <div class="mockup-label">Main Window — Timeline + Summary</div>
+  <div class="main-window">
+    <!-- Title bar -->
+    <div class="titlebar">
+      <div class="titlebar-left"><span class="title">VoiceMem</span></div>
+      <div class="titlebar-right">
+        <span class="date-picker">2026/03/16 ▾</span>
+        <button class="icon-btn" title="搜索">🔍</button>
+      </div>
+    </div>
+    <!-- Status bar -->
+    <div class="statusbar">
+      <div class="rec-dot"></div>
+      <span style="color:var(--text-secondary)">录制中</span>
+      <div style="display:flex;align-items:center;gap:4px;color:var(--green)">
+        <div class="wave-bars"><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div></div>
+        <span>语音</span>
+      </div>
+      <div class="spacer"></div>
+      <span style="color:var(--text-tertiary)">24 条 · 1.2 MB</span>
+    </div>
+
+    <!-- Main content: left timeline + right summary -->
+    <div class="main-content">
+      <!-- LEFT: Timeline -->
+      <div class="timeline-panel">
+        <div class="timeline-scroll">
+          <!-- Live section -->
+          <div class="live-section">
+            <div class="live-header"><div class="live-dot"></div><span class="live-label">Live</span></div>
+            <div class="live-text">我觉得这个方案可以，但是需要再看看性能…</div>
+          </div>
+
+          <!-- Date header -->
+          <div class="date-header">今天 · 3月16日 星期日</div>
+
+          <!-- Transcription rows -->
+          <div class="tx-row">
+            <button class="tx-play">▶</button>
+            <div class="tx-time mono">15:08</div>
+            <div class="tx-dot-col"><div class="tx-dot"></div><div class="tx-line"></div></div>
+            <div class="tx-body">
+              <div class="tx-text">这个功能的性能还是不行，要不我们用缓存试试，Redis 或者 Memcached 都可以，先跑个 benchmark 看看</div>
+              <div class="tx-meta">
+                <span class="tag tag-zh">zh</span>
+                <span class="tag-dur">4.2s</span>
+                <span style="opacity:0.4">🔊</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tx-row">
+            <button class="tx-play playing">⏸</button>
+            <div class="tx-time mono">15:03</div>
+            <div class="tx-dot-col"><div class="tx-dot"></div><div class="tx-line"></div></div>
+            <div class="tx-body">
+              <div class="tx-text">OK so the main issue is that we need to refactor the authentication module before the release, the current implementation has some security concerns</div>
+              <div class="tx-meta">
+                <span class="tag tag-en">en</span>
+                <span class="tag-dur">5.8s</span>
+                <span style="opacity:0.4">🔊</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tx-row">
+            <button class="tx-play">▶</button>
+            <div class="tx-time mono">14:58</div>
+            <div class="tx-dot-col"><div class="tx-dot"></div><div class="tx-line"></div></div>
+            <div class="tx-body">
+              <div class="tx-text">明天下午三点跟小王开会，讨论一下 API 设计方案，他说用 REST 比较好</div>
+              <div class="tx-meta">
+                <span class="tag tag-zh">zh</span>
+                <span class="tag-dur">3.2s</span>
+                <span style="opacity:0.4">🔊</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tx-row">
+            <button class="tx-play">▶</button>
+            <div class="tx-time mono">14:52</div>
+            <div class="tx-dot-col"><div class="tx-dot"></div><div class="tx-line"></div></div>
+            <div class="tx-body">
+              <div class="tx-text">GraphQL 太复杂了，我们团队没人熟悉，还是用 REST 吧，文档也好写</div>
+              <div class="tx-meta">
+                <span class="tag tag-zh">zh</span>
+                <span class="tag-dur">4.8s</span>
+                <span style="opacity:0.4">🔊</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tx-row">
+            <button class="tx-play">▶</button>
+            <div class="tx-time mono">14:48</div>
+            <div class="tx-dot-col"><div class="tx-dot"></div><div class="tx-line"></div></div>
+            <div class="tx-body">
+              <div class="tx-text">I think we should consider both options, REST is simpler but GraphQL gives us more flexibility for the client apps</div>
+              <div class="tx-meta">
+                <span class="tag tag-en">en</span>
+                <span class="tag-dur">6.1s</span>
+                <span style="opacity:0.4">🔊</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tx-row">
+            <button class="tx-play">▶</button>
+            <div class="tx-time mono">14:42</div>
+            <div class="tx-dot-col"><div class="tx-dot"></div><div class="tx-line"></div></div>
+            <div class="tx-body">
+              <div class="tx-text">好那就用 PostgreSQL 吧，配合 Kubernetes 部署，我这周先搭个开发环境</div>
+              <div class="tx-meta">
+                <span class="tag tag-zh">zh</span>
+                <span class="tag-dur">3.5s</span>
+                <span style="opacity:0.4">🔊</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tx-row">
+            <button class="tx-play">▶</button>
+            <div class="tx-time mono">14:36</div>
+            <div class="tx-dot-col"><div class="tx-dot"></div><div class="tx-line"></div></div>
+            <div class="tx-body">
+              <div class="tx-text">MongoDB 在这个场景下不太合适，关系型数据库更好，PG 的 JSON 支持也够用了</div>
+              <div class="tx-meta">
+                <span class="tag tag-zh">zh</span>
+                <span class="tag-dur">5.2s</span>
+                <span style="opacity:0.4">🔊</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tx-row">
+            <button class="tx-play">▶</button>
+            <div class="tx-time mono">14:31</div>
+            <div class="tx-dot-col"><div class="tx-dot"></div><div class="tx-line"></div></div>
+            <div class="tx-body">
+              <div class="tx-text">Let's start by defining the data model, we need to decide between SQL and NoSQL first</div>
+              <div class="tx-meta">
+                <span class="tag tag-en">en</span>
+                <span class="tag-dur">4.4s</span>
+                <span style="opacity:0.4">🔊</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tx-row">
+            <button class="tx-play">▶</button>
+            <div class="tx-time mono">14:15</div>
+            <div class="tx-dot-col"><div class="tx-dot"></div><div class="tx-line"></div></div>
+            <div class="tx-body">
+              <div class="tx-text">今天的 standup 提了一下那个 bug，已经有人在看了</div>
+              <div class="tx-meta">
+                <span class="tag tag-zh">zh</span>
+                <span class="tag-dur">2.8s</span>
+                <span style="opacity:0.4">🔊</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tx-row">
+            <button class="tx-play">▶</button>
+            <div class="tx-time mono">14:02</div>
+            <div class="tx-dot-col"><div class="tx-dot"></div><div class="tx-line" style="min-height:0"></div></div>
+            <div class="tx-body">
+              <div class="tx-text">下午好，开始干活了，先看看邮件有没有什么重要的</div>
+              <div class="tx-meta">
+                <span class="tag tag-zh">zh</span>
+                <span class="tag-dur">2.1s</span>
+                <span style="opacity:0.4">🔊</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Player bar -->
+        <div class="player-bar">
+          <button class="player-btn">⏸</button>
+          <div class="player-info">
+            <div class="pi-text">OK so the main issue is that we need to refactor...</div>
+            <div class="pi-meta">15:03 · en · 5.8s</div>
+          </div>
+          <div class="player-track">
+            <span class="pt-time mono">0:02</span>
+            <div class="pt-bar"><div class="pt-fill"></div><div class="pt-thumb"></div></div>
+            <span class="pt-time mono">0:05</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Summary sidebar -->
+      <div class="summary-panel">
+        <div class="summary-header">
+          <span>✦</span> 阶段摘要
+        </div>
+        <div class="summary-scroll">
+          <!-- Current window (no summary yet) -->
+          <div class="summary-card no-summary active">
+            <div class="sc-time">
+              <span>15:00 – 15:15</span>
+              <span class="sc-count">3 条</span>
+            </div>
+            <div class="sc-text">正在录制中，摘要将在窗口结束后生成…</div>
+          </div>
+
+          <!-- Completed window with AI summary -->
+          <div class="summary-card">
+            <div class="sc-time">
+              <span>14:45 – 15:00</span>
+              <span class="sc-count">4 条</span>
+            </div>
+            <div class="sc-text">讨论了 API 设计方案。小王倾向 REST，认为 GraphQL 太复杂、团队不熟悉。决定用 REST，明天三点继续讨论认证模块重构。</div>
+            <div class="sc-ai">
+              <span>✦</span> AI 摘要
+            </div>
+          </div>
+
+          <div class="summary-card">
+            <div class="sc-time">
+              <span>14:30 – 14:45</span>
+              <span class="sc-count">3 条</span>
+            </div>
+            <div class="sc-text">讨论新项目技术选型。评估了 MongoDB vs PostgreSQL，最终选择 PG（JSON 支持够用）。计划用 Kubernetes 部署，本周搭开发环境。</div>
+            <div class="sc-ai">
+              <span>✦</span> AI 摘要
+            </div>
+          </div>
+
+          <div class="summary-card no-summary">
+            <div class="sc-time">
+              <span>14:15 – 14:30</span>
+              <span class="sc-count">1 条</span>
+            </div>
+            <div class="sc-text">今天的 standup 提了一下那个 bug，已经有人在看了</div>
+          </div>
+
+          <div class="summary-card no-summary">
+            <div class="sc-time">
+              <span>14:00 – 14:15</span>
+              <span class="sc-count">1 条</span>
+            </div>
+            <div class="sc-text">下午好，开始干活了，先看看邮件有没有什么重要的</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SETTINGS (macOS System Preferences style) ===== -->
+<div class="mockup-group" style="align-items:flex-start">
+  <div class="mockup-label">Settings</div>
+  <div style="width:680px;height:560px;background:var(--bg);border-radius:10px;border:1px solid var(--border);overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,0.6)">
+
+    <!-- Title bar -->
+    <div class="titlebar" style="justify-content:center;flex-shrink:0">
+      <span class="title">VoiceMem 设置</span>
+    </div>
+
+    <!-- Sidebar + Detail -->
+    <div style="display:flex;flex:1;min-height:0">
+
+      <!-- SIDEBAR -->
+      <div style="width:180px;border-right:1px solid var(--border);padding:8px;overflow-y:auto;flex-shrink:0;background:var(--bg-deep)">
+        <style>
+          .nav-item { display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;cursor:pointer;transition:background .12s;font-size:12px;color:var(--text-secondary);margin-bottom:1px }
+          .nav-item:hover { background:rgba(255,255,255,0.04) }
+          .nav-item.active { background:rgba(10,132,255,0.18);color:var(--text) }
+          .nav-icon { width:20px;height:20px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0 }
+        </style>
+        <div class="nav-item active">
+          <div class="nav-icon" style="background:var(--accent-dim);color:var(--accent)">🎙</div>
+          <span>录音</span>
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon" style="background:var(--orange-dim);color:var(--orange)">🔊</div>
+          <span>语音检测</span>
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon" style="background:var(--green-dim);color:var(--green)">✦</div>
+          <span>转录</span>
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon" style="background:var(--purple-dim);color:var(--purple)">◇</div>
+          <span>摘要</span>
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon" style="background:rgba(255,255,255,0.06);color:var(--text-secondary)">⬡</div>
+          <span>存储</span>
+        </div>
+        <div class="nav-item">
+          <div class="nav-icon" style="background:rgba(255,255,255,0.06);color:var(--text-secondary)">⌘</div>
+          <span>系统</span>
+        </div>
+        <div style="height:1px;background:var(--border);margin:8px 10px"></div>
+        <div class="nav-item">
+          <div class="nav-icon" style="background:rgba(255,255,255,0.04);color:var(--text-tertiary)">ⓘ</div>
+          <span>关于</span>
+        </div>
+      </div>
+
+      <!-- DETAIL PANEL — showing "语音检测 (VAD)" as the most interesting page -->
+      <div style="flex:1;overflow-y:auto;padding:20px 24px">
+        <style>
+          .detail-title { font-size:18px;font-weight:600;margin-bottom:4px }
+          .detail-desc { font-size:11px;color:var(--text-tertiary);margin-bottom:20px;line-height:1.5 }
+          .group { background:var(--surface);border-radius:8px;border:1px solid var(--border-light);margin-bottom:16px;overflow:hidden }
+          .group-title { font-size:10px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.5px;padding:10px 14px 6px }
+          .g-row { display:flex;align-items:center;justify-content:space-between;padding:8px 14px;min-height:36px }
+          .g-row + .g-row { border-top:1px solid var(--border-light) }
+          .g-row .label { font-size:13px;color:var(--text) }
+          .g-row .sublabel { font-size:10px;color:var(--text-muted);margin-top:1px }
+          .g-row .val { font-size:12px;color:var(--text-secondary) }
+          .g-row .picker { font-size:12px;color:var(--text-secondary);background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:5px;padding:3px 8px;cursor:pointer }
+          .g-row .toggle-sm { width:36px;height:20px;border-radius:10px;background:var(--green);position:relative;cursor:pointer;flex-shrink:0 }
+          .g-row .toggle-sm .k { width:16px;height:16px;border-radius:50%;background:white;position:absolute;top:2px;right:2px;box-shadow:0 1px 2px rgba(0,0,0,.3) }
+          .g-row .toggle-sm.off { background:var(--surface-hover) }
+          .g-row .toggle-sm.off .k { right:auto;left:2px }
+          .g-slider { display:flex;align-items:center;gap:8px }
+          .g-slider .track { width:140px;height:3px;background:var(--border);border-radius:2px;position:relative }
+          .g-slider .fill { height:100%;border-radius:2px;background:var(--accent) }
+          .g-slider .nub { width:12px;height:12px;border-radius:50%;background:white;position:absolute;top:-4.5px;box-shadow:0 1px 3px rgba(0,0,0,.3) }
+          .g-slider .num { font-size:11px;color:var(--text-secondary);width:36px;text-align:right;font-family:'SF Mono',Menlo,monospace }
+          .kbd { font-family:'SF Mono',Menlo,monospace;font-size:11px;background:rgba(255,255,255,0.08);border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--text-secondary) }
+          .btn-danger { font-size:12px;color:var(--red);background:rgba(255,69,58,0.1);border:1px solid rgba(255,69,58,0.25);border-radius:6px;padding:5px 12px;cursor:pointer;font-weight:500 }
+          .btn-danger:hover { background:rgba(255,69,58,0.2) }
+          .btn-export { font-size:11px;color:var(--accent);background:var(--accent-dim);border:1px solid rgba(10,132,255,0.2);border-radius:5px;padding:3px 10px;cursor:pointer }
+          .btn-export:hover { background:rgba(10,132,255,0.2) }
+          .stat-grid { display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:4px }
+          .stat-card { background:var(--bg);border-radius:6px;padding:10px;text-align:center }
+          .stat-card .num { font-size:18px;font-weight:600;color:var(--text) }
+          .stat-card .lbl { font-size:10px;color:var(--text-tertiary);margin-top:2px }
+        </style>
+
+        <!-- ===== Page: 录音 ===== -->
+        <!--
+        <div class="detail-title">录音</div>
+        <div class="detail-desc">控制麦克风输入和自动录音行为</div>
+        -->
+
+        <!-- ===== Page: 语音检测 (showing this one as demo) ===== -->
+        <div class="detail-title">语音检测</div>
+        <div class="detail-desc">调节 VAD（Voice Activity Detection）参数来控制什么样的声音会被录入和切段。这些设置影响转录质量和系统资源使用。</div>
+
+        <div class="group">
+          <div class="group-title">灵敏度</div>
+          <div class="g-row">
+            <div>
+              <div class="label">检测阈值</div>
+              <div class="sublabel">越低越灵敏，越高越严格</div>
+            </div>
+            <div class="g-slider">
+              <span style="font-size:10px;color:var(--text-muted)">灵敏</span>
+              <div class="track"><div class="fill" style="width:50%"></div><div class="nub" style="left:calc(50% - 6px)"></div></div>
+              <span style="font-size:10px;color:var(--text-muted)">严格</span>
+              <span class="num">0.50</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="group-title">切段规则</div>
+          <div class="g-row">
+            <div>
+              <div class="label">最短语音段</div>
+              <div class="sublabel">短于此时长的声音丢弃（过滤咳嗽、敲击）</div>
+            </div>
+            <div class="g-slider">
+              <div class="track" style="width:100px"><div class="fill" style="width:25%"></div><div class="nub" style="left:calc(25% - 6px)"></div></div>
+              <span class="num">500ms</span>
+            </div>
+          </div>
+          <div class="g-row">
+            <div>
+              <div class="label">最长语音段</div>
+              <div class="sublabel">超过此时长自动切段送去转录</div>
+            </div>
+            <div class="g-slider">
+              <div class="track" style="width:100px"><div class="fill" style="width:70%"></div><div class="nub" style="left:calc(70% - 6px)"></div></div>
+              <span class="num">28s</span>
+            </div>
+          </div>
+          <div class="g-row">
+            <div>
+              <div class="label">静音切段延迟</div>
+              <div class="sublabel">停止说话后等多久结束当前段</div>
+            </div>
+            <div class="g-slider">
+              <div class="track" style="width:100px"><div class="fill" style="width:37%"></div><div class="nub" style="left:calc(37% - 6px)"></div></div>
+              <span class="num">1.5s</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Divider to show what other pages look like -->
+        <div style="height:1px;background:var(--border);margin:24px 0"></div>
+        <div style="font-size:10px;color:var(--text-muted);text-align:center;margin-bottom:16px">↓ 以下展示其他页面的内容 ↓</div>
+
+        <!-- ===== Page: 录音 ===== -->
+        <div class="detail-title">录音</div>
+        <div class="detail-desc">控制麦克风输入和录音行为</div>
+
+        <div class="group">
+          <div class="g-row">
+            <div class="label">输入设备</div>
+            <span class="picker">MacBook Pro Microphone ▾</span>
+          </div>
+          <div class="g-row">
+            <div class="label">启动时自动录音</div>
+            <div class="toggle-sm"><div class="k"></div></div>
+          </div>
+        </div>
+
+        <div style="height:24px"></div>
+
+        <!-- ===== Page: 转录 ===== -->
+        <div class="detail-title">转录</div>
+        <div class="detail-desc">WhisperKit 语音识别模型配置</div>
+
+        <div class="group">
+          <div class="g-row">
+            <div class="label">转录模型</div>
+            <span class="picker">large-v3-turbo ▾</span>
+          </div>
+          <div class="g-row">
+            <div class="label">语言偏好</div>
+            <span class="picker">自动检测 ▾</span>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="group-title">模型信息</div>
+          <div class="g-row"><span class="label">模型大小</span><span class="val">632 MB</span></div>
+          <div class="g-row"><span class="label">运行硬件</span><span class="val">Apple Neural Engine</span></div>
+          <div class="g-row"><span class="label">状态</span><span style="font-size:12px;color:var(--green)">已加载</span></div>
+        </div>
+
+        <div style="height:24px"></div>
+
+        <!-- ===== Page: 摘要 ===== -->
+        <div class="detail-title">摘要</div>
+        <div class="detail-desc">配置阶段性语音摘要的生成方式</div>
+
+        <div class="group">
+          <div class="g-row">
+            <div>
+              <div class="label">摘要间隔</div>
+              <div class="sublabel">每隔多久聚合一次转录文本</div>
+            </div>
+            <span class="picker">15 分钟 ▾</span>
+          </div>
+          <div class="g-row">
+            <div>
+              <div class="label">AI 摘要引擎</div>
+              <div class="sublabel">关闭 = 仅拼接原文</div>
+            </div>
+            <span class="picker">关闭 ▾</span>
+          </div>
+        </div>
+
+        <div class="group" style="background:transparent;border:1px dashed var(--border);padding:12px 14px">
+          <div style="font-size:11px;color:var(--text-muted);line-height:1.6">
+            <div style="font-weight:600;margin-bottom:4px;color:var(--text-tertiary)">AI 引擎选项</div>
+            <b style="color:var(--text-secondary)">关闭</b> — 纯文本拼接，无需额外资源<br>
+            <b style="color:var(--text-secondary)">LM Studio</b> — 调用 localhost:1234 本地 LLM（需运行中）<br>
+            <b style="color:var(--text-secondary)">Apple Intelligence</b> — macOS 26+ 内置 3B 模型，ANE 运行
+          </div>
+        </div>
+
+        <div style="height:24px"></div>
+
+        <!-- ===== Page: 存储 ===== -->
+        <div class="detail-title">存储</div>
+        <div class="detail-desc">管理音频文件保留策略和数据导出</div>
+
+        <div class="group">
+          <div class="g-row">
+            <div>
+              <div class="label">音频保留</div>
+              <div class="sublabel">转录文本永久保留，仅清理音频文件</div>
+            </div>
+            <span class="picker">7 天 ▾</span>
+          </div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-card"><div class="num">42.3</div><div class="lbl">MB 音频</div></div>
+          <div class="stat-card"><div class="num">1.2</div><div class="lbl">MB 数据库</div></div>
+          <div class="stat-card"><div class="num">1,247</div><div class="lbl">条转录</div></div>
+        </div>
+
+        <div class="group" style="margin-top:16px">
+          <div class="g-row">
+            <div class="label">导出数据</div>
+            <div style="display:flex;gap:6px">
+              <span class="btn-export">Markdown</span>
+              <span class="btn-export">JSON</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="height:24px"></div>
+
+        <!-- ===== Page: 系统 ===== -->
+        <div class="detail-title">系统</div>
+        <div class="detail-desc">启动行为、通知和快捷键</div>
+
+        <div class="group">
+          <div class="g-row">
+            <div class="label">开机自启</div>
+            <div class="toggle-sm"><div class="k"></div></div>
+          </div>
+          <div class="g-row">
+            <div>
+              <div class="label">新转录通知</div>
+              <div class="sublabel">每次转录完成时发送系统通知</div>
+            </div>
+            <div class="toggle-sm off"><div class="k"></div></div>
+          </div>
+          <div class="g-row">
+            <div>
+              <div class="label">全局快捷键</div>
+              <div class="sublabel">暂停 / 恢复录制</div>
+            </div>
+            <span class="kbd">⌘ ⇧ R</span>
+          </div>
+        </div>
+
+        <div style="height:16px"></div>
+
+        <div class="group" style="border-color:rgba(255,69,58,0.2)">
+          <div class="group-title" style="color:var(--red)">危险操作</div>
+          <div class="g-row">
+            <div>
+              <div class="label">清空所有数据</div>
+              <div class="sublabel">删除转录、摘要和音频文件，不可恢复</div>
+            </div>
+            <button class="btn-danger">清空数据…</button>
+          </div>
+        </div>
+
+        <div style="height:24px"></div>
+
+        <!-- ===== Page: 关于 ===== -->
+        <div class="detail-title">关于</div>
+
+        <div class="group">
+          <div class="g-row"><span class="label">版本</span><span class="val">0.1.0 (Build 1)</span></div>
+          <div class="g-row"><span class="label">数据位置</span><span class="val" style="font-size:11px">~/Library/.../VoiceMem/</span></div>
+          <div class="g-row"><span class="label">GitHub</span><span style="font-size:12px;color:var(--accent);cursor:pointer">DearBobby9/voicemem</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

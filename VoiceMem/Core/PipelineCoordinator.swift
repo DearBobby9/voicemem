@@ -21,6 +21,7 @@ final class PipelineCoordinator {
     let transcription: TranscriptionManager
     let database: DatabaseManager
     let aggregator: SummaryAggregator
+    let playback: AudioPlaybackManager
 
     // MARK: Observable state
 
@@ -45,6 +46,7 @@ final class PipelineCoordinator {
         self.vad = VADManager()
         self.transcription = TranscriptionManager()
         self.aggregator = SummaryAggregator(database: db)
+        self.playback = AudioPlaybackManager()
 
         refreshTodayCount()
         wireVADCallback()
@@ -122,12 +124,22 @@ final class PipelineCoordinator {
     // MARK: - Settings
 
     func applySettings() {
-        let defaults = UserDefaults.standard
-        let threshold = defaults.double(forKey: "vadThreshold")
-        if threshold > 0 {
-            vad.threshold = Float(threshold)
-            logger.info("[Pipeline] Applied VAD threshold: \(threshold)")
-        }
+        let d = UserDefaults.standard
+
+        // VAD settings
+        let threshold = d.double(forKey: AppSettingsKey.vadThreshold)
+        if threshold > 0 { vad.threshold = Float(threshold) }
+
+        let minSpeech = d.integer(forKey: AppSettingsKey.vadMinSpeechMs)
+        if minSpeech > 0 { vad.minSpeechMs = Int64(minSpeech) }
+
+        let maxSegment = d.integer(forKey: AppSettingsKey.vadMaxSegmentMs)
+        if maxSegment > 0 { vad.maxSegmentMs = Int64(maxSegment) }
+
+        let silenceTrigger = d.integer(forKey: AppSettingsKey.vadSilenceTriggerMs)
+        if silenceTrigger > 0 { vad.silenceTriggerMs = Int64(silenceTrigger) }
+
+        logger.info("[Pipeline] Applied settings: VAD threshold=\(threshold), minSpeech=\(minSpeech)ms, maxSegment=\(maxSegment)ms, silence=\(silenceTrigger)ms")
     }
 
     // MARK: - Audio consumer (background task)

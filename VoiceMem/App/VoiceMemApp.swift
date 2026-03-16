@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     func applicationDidFinishLaunching(_ notification: Notification) {
         logger.info("[App] Launching VoiceMem")
         NSApp.setActivationPolicy(.accessory)
+        UserDefaults.registerVoiceMemDefaults()
         launchError = nil
 
         do {

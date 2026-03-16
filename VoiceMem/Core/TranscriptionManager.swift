@@ -10,39 +10,70 @@ private final class WhisperKitBox: @unchecked Sendable {
     init(_ kit: WhisperKit) { self.kit = kit }
 }
 
-/// Manages WhisperKit ASR model — loads once, transcribes audio segments on demand.
+/// Manages WhisperKit ASR — supports model selection, loading, and transcription.
 @MainActor
 @Observable
 final class TranscriptionManager {
     private var whisperBox: WhisperKitBox?
+
     private(set) var isModelLoaded = false
     private(set) var isLoading = false
-    private(set) var modelName = "large-v3-v20240930_turbo"
+    private(set) var loadingProgress: String = ""
+    private(set) var currentModelId: String = ""
+
+    /// The model to load (read from UserDefaults).
+    var selectedModelId: String {
+        UserDefaults.standard.string(forKey: AppSettingsKey.whisperModel) ?? WhisperModel.defaultModel
+    }
+
+    /// Language preference for transcription.
+    var languagePreference: String? {
+        let pref = UserDefaults.standard.string(forKey: AppSettingsKey.transcriptionLanguage) ?? "auto"
+        return pref == "auto" ? nil : pref
+    }
 
     init() {
-        logger.info("[Transcription] Initialized, model=\(self.modelName)")
+        logger.info("[Transcription] Initialized")
     }
 
     // MARK: - Model Lifecycle
 
-    /// Load WhisperKit model. First run downloads ~632MB and compiles for ANE.
-    func loadModel() async throws {
-        guard !isModelLoaded else { return }
-        isLoading = true
-        defer { isLoading = false }
+    /// Load (or switch) the WhisperKit model. Downloads on first use.
+    func loadModel(modelId: String? = nil) async throws {
+        let targetModel = modelId ?? selectedModelId
 
-        logger.info("[Transcription] Loading model \(self.modelName)...")
+        // Skip if already loaded with this model
+        if isModelLoaded && currentModelId == targetModel { return }
+
+        // Unload previous model if switching
+        if isModelLoaded {
+            whisperBox = nil
+            isModelLoaded = false
+            logger.info("[Transcription] Unloaded previous model \(self.currentModelId)")
+        }
+
+        isLoading = true
+        loadingProgress = "正在下载模型..."
+        defer { isLoading = false; loadingProgress = "" }
+
+        logger.info("[Transcription] Loading model \(targetModel)...")
 
         let config = WhisperKitConfig(
-            model: modelName,
+            model: targetModel,
             verbose: false,
             logLevel: .none
         )
+
+        loadingProgress = "正在初始化 WhisperKit..."
         let kit = try await WhisperKit(config)
         whisperBox = WhisperKitBox(kit)
+        currentModelId = targetModel
+
+        // Persist the choice
+        UserDefaults.standard.set(targetModel, forKey: AppSettingsKey.whisperModel)
 
         isModelLoaded = true
-        logger.info("[Transcription] Model loaded successfully")
+        logger.info("[Transcription] Model \(targetModel) loaded successfully")
     }
 
     // MARK: - Transcribe
@@ -57,12 +88,12 @@ final class TranscriptionManager {
         let path = audioPath.path
         let segStart = segment.timestampStart
         let segEnd = segment.timestampEnd
-        let model = modelName
+        let model = currentModelId
+        let lang = languagePreference
 
-        logger.info("[Transcription] Transcribing \(segment.durationMs)ms from \(audioPath.lastPathComponent)...")
+        logger.info("[Transcription] Transcribing \(segment.durationMs)ms, model=\(model), lang=\(lang ?? "auto")")
 
-        // Run transcription off MainActor to avoid blocking UI
-        let (text, language) = try await Task.detached(priority: .userInitiated) {
+        let (text, detectedLang) = try await Task.detached(priority: .userInitiated) {
             let results = try await box.kit.transcribe(audioPath: path)
             let text = results.map { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
             let language = results.first?.language
@@ -75,12 +106,17 @@ final class TranscriptionManager {
             text: text,
             timestampStart: segStart,
             timestampEnd: segEnd,
-            language: language,
+            language: detectedLang,
             audioPath: audioPath.lastPathComponent,
             model: model,
             confidence: nil
         )
     }
+
+    // MARK: - Available Models
+
+    /// List all available models with their metadata.
+    static let availableModels = WhisperModel.allModels
 }
 
 // MARK: - Errors
