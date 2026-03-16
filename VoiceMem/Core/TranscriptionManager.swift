@@ -58,8 +58,14 @@ final class TranscriptionManager {
 
         logger.info("[Transcription] Loading model \(targetModel)...")
 
+        // Explicitly request ANE for both encoder and decoder
+        let computeOptions = ModelComputeOptions(
+            audioEncoderCompute: .cpuAndNeuralEngine,
+            textDecoderCompute: .cpuAndNeuralEngine
+        )
         let config = WhisperKitConfig(
             model: targetModel,
+            computeOptions: computeOptions,
             verbose: false,
             logLevel: .none
         )
