@@ -88,39 +88,11 @@ final class AudioCaptureManager {
         updateDeviceName()
         logger.info("[AudioCapture] Hardware format: \(hwFormat.sampleRate)Hz, \(hwFormat.channelCount)ch")
 
-        // Build the callback box and set the closure BEFORE engine.start().
-        // The box is captured by value in the tap closure — no actor reference crosses
-        // the render-thread boundary.
-        let box = AudioCallbackBox()
-        let continuation = audioContinuation   // local let: safe to capture (Sendable struct)
-        var tapCount = 0
-
-        box.callback = { samples, frameCount, timestampMs in
-            // --- AUDIO RENDER THREAD ---
-            // Copy out of the unsafe buffer pointer into a value-type Array
-            // so we can safely ship it across the actor boundary via the stream.
-            let sampleArray = Array(samples)
-
-            tapCount += 1
-            if tapCount <= 3 || tapCount % 500 == 0 {
-                let rms = sqrt(sampleArray.reduce(0) { $0 + $1 * $1 } / max(1, Float(frameCount)))
-                // os_log is render-thread safe; Logger.info is not lock-free but acceptable here.
-                logger.info("[AudioCapture] Tap #\(tapCount): \(frameCount) frames, RMS=\(String(format: "%.6f", rms))")
-            }
-
-            // yield() is documented as safe to call from any thread/context.
-            // .bufferingNewest(16) drops oldest if the consumer is slow — render thread never blocks.
-            continuation.yield(AudioBuffer(samples: sampleArray, timestampMs: timestampMs))
-        }
-
-        inputNode.installTap(onBus: 0, bufferSize: hardwareBufferSize, format: hwFormat) { buffer, _ in
-            // --- AUDIO RENDER THREAD ---
-            guard let channelData = buffer.floatChannelData else { return }
-            let frameCount = Int(buffer.frameLength)
-            let timestampMs = Int64(Date().timeIntervalSince1970 * 1_000)
-            let ptr = UnsafeBufferPointer(start: channelData[0], count: frameCount)
-            box.callback?(ptr, frameCount, timestampMs)
-        }
+        // Install tap via nonisolated static — closures created in @MainActor context
+        // inherit @MainActor isolation in Swift 6, causing _dispatch_assert_queue_fail
+        // when AVAudioEngine calls them on the render thread.
+        let continuation = audioContinuation
+        Self.installTap(on: inputNode, bufferSize: hardwareBufferSize, format: hwFormat, continuation: continuation)
 
         try engine.start()
         isCapturing = true
@@ -184,6 +156,38 @@ final class AudioCaptureManager {
         }
         #endif
     }
+
+    // MARK: - Tap installation (nonisolated to prevent @MainActor closure inheritance)
+
+    /// Closures created inside `@MainActor` methods inherit actor isolation in Swift 6.
+    /// AVAudioEngine calls the tap block on the audio render thread → runtime asserts
+    /// `_dispatch_assert_queue_fail`. By creating the closure in a `nonisolated static`
+    /// context, it has NO actor isolation and runs safely on the render thread.
+    private nonisolated static func installTap(
+        on node: AVAudioInputNode,
+        bufferSize: AVAudioFrameCount,
+        format: AVAudioFormat,
+        continuation: AsyncStream<AudioBuffer>.Continuation
+    ) {
+        var tapCount = 0
+        node.installTap(onBus: 0, bufferSize: bufferSize, format: format) { buffer, _ in
+            // --- AUDIO RENDER THREAD (no actor isolation) ---
+            guard let channelData = buffer.floatChannelData else { return }
+            let frameCount = Int(buffer.frameLength)
+            let samples = Array(UnsafeBufferPointer(start: channelData[0], count: frameCount))
+            let timestampMs = Int64(Date().timeIntervalSince1970 * 1_000)
+
+            tapCount += 1
+            if tapCount <= 3 || tapCount % 500 == 0 {
+                let rms = sqrt(samples.reduce(0) { $0 + $1 * $1 } / max(1, Float(frameCount)))
+                logger.info("[AudioCapture] Tap #\(tapCount): \(frameCount) frames, RMS=\(String(format: "%.6f", rms))")
+            }
+
+            continuation.yield(AudioBuffer(samples: samples, timestampMs: timestampMs))
+        }
+    }
+
+    // MARK: - Device change observation
 
     private func observeDeviceChanges() {
         configChangeObserver = NotificationCenter.default.addObserver(
