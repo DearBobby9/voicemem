@@ -4,13 +4,12 @@ import os
 private let logger = Logger(subsystem: "com.voicemem.app", category: "AudioCapture")
 
 /// Captures audio from the microphone via AVAudioEngine at 16kHz mono.
-/// Uses a mixer node to resample from hardware rate (e.g. 48kHz) to 16kHz.
-/// Forwards PCM Float32 buffers to a callback for VAD processing.
+/// Taps at hardware native format, then resamples via AVAudioConverter.
 @MainActor
 @Observable
 final class AudioCaptureManager {
     private var engine: AVAudioEngine?
-    private var mixerNode: AVAudioMixerNode?
+    private var converter: AVAudioConverter?
     private let targetSampleRate: Double = 16000
     private let targetChannels: AVAudioChannelCount = 1
     private let bufferSize: AVAudioFrameCount = 4096
@@ -33,11 +32,11 @@ final class AudioCaptureManager {
         let engine = AVAudioEngine()
         self.engine = engine
         let inputNode = engine.inputNode
-        let hwFormat = inputNode.outputFormat(forBus: 0)
 
+        // Use the hardware's native format for the tap — no render graph manipulation
+        let hwFormat = inputNode.outputFormat(forBus: 0)
         logger.info("[AudioCapture] Hardware format: \(hwFormat.sampleRate)Hz, \(hwFormat.channelCount)ch")
 
-        // Target format: 16kHz mono Float32
         guard let targetFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: targetSampleRate,
@@ -47,30 +46,44 @@ final class AudioCaptureManager {
             throw AudioCaptureError.formatCreationFailed
         }
 
-        // Insert a mixer node between input and output to handle resampling.
-        // AVAudioEngine resamples automatically when connecting nodes with different formats.
-        let mixer = AVAudioMixerNode()
-        self.mixerNode = mixer
-        engine.attach(mixer)
-
-        // input (hwFormat) → mixer → mainMixer
-        engine.connect(inputNode, to: mixer, format: hwFormat)
-        engine.connect(mixer, to: engine.mainMixerNode, format: targetFormat)
-
-        // Mute output to prevent feedback
-        engine.mainMixerNode.outputVolume = 0
+        // Create converter: hwFormat → 16kHz mono
+        guard let conv = AVAudioConverter(from: hwFormat, to: targetFormat) else {
+            logger.error("[AudioCapture] Failed to create audio converter \(hwFormat.sampleRate)Hz → \(self.targetSampleRate)Hz")
+            throw AudioCaptureError.converterCreationFailed
+        }
+        self.converter = conv
 
         updateDeviceName()
 
-        // Install tap on mixer node at target format (16kHz mono)
-        mixer.installTap(onBus: 0, bufferSize: bufferSize, format: targetFormat) { [weak self] buffer, _ in
-            guard let self, let channelData = buffer.floatChannelData else { return }
+        // Capture converter for use on audio thread (avoids @MainActor access)
+        let audioConverter = conv
+        let targetRate = targetSampleRate
 
-            let frameCount = Int(buffer.frameLength)
+        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: hwFormat) { [weak self] buffer, _ in
+            let ratio = targetRate / buffer.format.sampleRate
+            let outputFrameCount = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
+
+            guard let outputBuffer = AVAudioPCMBuffer(
+                pcmFormat: audioConverter.outputFormat,
+                frameCapacity: outputFrameCount
+            ) else { return }
+
+            var error: NSError?
+            let status = audioConverter.convert(to: outputBuffer, error: &error) { _, outStatus in
+                outStatus.pointee = .haveData
+                return buffer
+            }
+
+            guard status == .haveData || status == .endOfStream,
+                  error == nil,
+                  let channelData = outputBuffer.floatChannelData,
+                  outputBuffer.frameLength > 0 else { return }
+
+            let frameCount = Int(outputBuffer.frameLength)
             let samples = Array(UnsafeBufferPointer(start: channelData[0], count: frameCount))
             let timestampMs = Int64(Date().timeIntervalSince1970 * 1000)
 
-            self.onAudioBuffer?(samples, timestampMs)
+            self?.onAudioBuffer?(samples, timestampMs)
         }
 
         try engine.start()
@@ -79,13 +92,10 @@ final class AudioCaptureManager {
     }
 
     func stop() {
-        mixerNode?.removeTap(onBus: 0)
+        engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
-        if let mixer = mixerNode {
-            engine?.detach(mixer)
-        }
         engine = nil
-        mixerNode = nil
+        converter = nil
         isCapturing = false
         logger.info("[AudioCapture] Stopped")
     }
@@ -119,30 +129,22 @@ final class AudioCaptureManager {
         )
         let status = AudioObjectGetPropertyData(
             AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            0, nil,
-            &propertySize,
-            &deviceID
+            &address, 0, nil, &propertySize, &deviceID
         )
         guard status == noErr else { return }
 
-        var nameSize: UInt32 = 0
         var nameAddress = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyDeviceNameCFString,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        // Get size first
-        AudioObjectGetPropertyDataSize(deviceID, &nameAddress, 0, nil, &nameSize)
-        guard nameSize > 0 else { return }
-
-        var name: CFString = "" as CFString
-        let nameStatus = withUnsafeMutablePointer(to: &name) { ptr in
-            var size = UInt32(MemoryLayout<CFString>.size)
-            return AudioObjectGetPropertyData(deviceID, &nameAddress, 0, nil, &size, ptr)
+        var cfName: CFString = "" as CFString
+        var nameSize = UInt32(MemoryLayout<CFString>.size)
+        let nameStatus = withUnsafeMutablePointer(to: &cfName) { ptr in
+            AudioObjectGetPropertyData(deviceID, &nameAddress, 0, nil, &nameSize, ptr)
         }
         if nameStatus == noErr {
-            currentDeviceName = name as String
+            currentDeviceName = cfName as String
         }
         #endif
     }
@@ -171,11 +173,13 @@ final class AudioCaptureManager {
 
 enum AudioCaptureError: LocalizedError {
     case formatCreationFailed
+    case converterCreationFailed
     case engineStartFailed
 
     var errorDescription: String? {
         switch self {
         case .formatCreationFailed: "Failed to create audio format (16kHz mono)"
+        case .converterCreationFailed: "Failed to create audio format converter"
         case .engineStartFailed: "Failed to start audio engine"
         }
     }
