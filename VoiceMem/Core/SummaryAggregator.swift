@@ -61,12 +61,65 @@ final class SummaryAggregator {
 
     /// Aggregate all transcriptions in a specific 15-minute window.
     func aggregate(windowStart: Int64, windowEnd: Int64) {
+        if Self.aggregateWindow(database: database, windowStart: windowStart, windowEnd: windowEnd) {
+            lastAggregatedWindow = windowStart
+        }
+    }
+
+    /// Backfill summaries for any windows that were missed (e.g., after app restart).
+    func backfillMissingSummaries() {
+        if let lastWindow = Self.backfillMissingSummaries(database: database, windowMinutes: windowMinutes) {
+            lastAggregatedWindow = lastWindow
+        }
+    }
+
+    func startBackfill() {
+        let database = self.database
+        let windowMinutes = self.windowMinutes
+
+        Task.detached(priority: .utility) { [weak self] in
+            let lastWindow = Self.backfillMissingSummaries(database: database, windowMinutes: windowMinutes)
+            if let lastWindow {
+                await MainActor.run { [weak self] in
+                    self?.lastAggregatedWindow = lastWindow
+                }
+            }
+        }
+    }
+
+    private nonisolated static func backfillMissingSummaries(
+        database: DatabaseManager,
+        windowMinutes: Int
+    ) -> Int64? {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: Date())
+        let startMs = Int64(startOfDay.timeIntervalSince1970 * 1000)
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let windowMs = Int64(windowMinutes * 60 * 1000)
+
+        var windowStart = startMs
+        var lastAggregatedWindow: Int64?
+        while windowStart + windowMs <= nowMs {
+            let windowEnd = windowStart + windowMs
+            if aggregateWindow(database: database, windowStart: windowStart, windowEnd: windowEnd) {
+                lastAggregatedWindow = windowStart
+            }
+            windowStart = windowEnd
+        }
+
+        return lastAggregatedWindow
+    }
+
+    private nonisolated static func aggregateWindow(
+        database: DatabaseManager,
+        windowStart: Int64,
+        windowEnd: Int64
+    ) -> Bool {
         do {
-            // I2 fix: check for existing summary before inserting
             let existing = try database.summariesInRange(start: windowStart, end: windowEnd)
             guard existing.isEmpty else {
                 logger.info("[SummaryAggregator] Summary already exists for window \(windowStart)")
-                return
+                return false
             }
 
             let transcriptions = try database.transcriptionsForWindow(
@@ -74,7 +127,7 @@ final class SummaryAggregator {
                 windowEnd: windowEnd
             )
 
-            guard !transcriptions.isEmpty else { return }
+            guard !transcriptions.isEmpty else { return false }
 
             let rawText = transcriptions
                 .map { $0.text }
@@ -88,27 +141,11 @@ final class SummaryAggregator {
             )
 
             _ = try database.insertSummary(summary)
-            lastAggregatedWindow = windowStart
-
             logger.info("[SummaryAggregator] Aggregated \(transcriptions.count) transcriptions for window \(windowStart)")
+            return true
         } catch {
             logger.error("[SummaryAggregator] Aggregation failed: \(error.localizedDescription)")
-        }
-    }
-
-    /// Backfill summaries for any windows that were missed (e.g., after app restart).
-    func backfillMissingSummaries() {
-        let calendar = Calendar.current
-        let startOfDay = calendar.startOfDay(for: Date())
-        let startMs = Int64(startOfDay.timeIntervalSince1970 * 1000)
-        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        let windowMs = Int64(windowMinutes * 60 * 1000)
-
-        var windowStart = startMs
-        while windowStart + windowMs <= nowMs {
-            let windowEnd = windowStart + windowMs
-            aggregate(windowStart: windowStart, windowEnd: windowEnd)
-            windowStart = windowEnd
+            return false
         }
     }
 }

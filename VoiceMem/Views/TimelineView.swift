@@ -5,7 +5,9 @@ struct TimelineView: View {
     let pipeline: PipelineCoordinator
 
     @State private var summaries: [Summary] = []
+    @State private var isLoading = true
     @State private var selectedDate = Date()
+    @State private var loadTask: Task<Void, Never>?
     @State private var refreshTimer: Timer?
 
     var body: some View {
@@ -16,7 +18,9 @@ struct TimelineView: View {
             Divider()
 
             // Timeline
-            if summaries.isEmpty {
+            if isLoading {
+                loadingState
+            } else if summaries.isEmpty {
                 emptyState
             } else {
                 timeline
@@ -24,7 +28,12 @@ struct TimelineView: View {
         }
         .frame(minWidth: 380, minHeight: 500)
         .onAppear { loadSummaries(); startRefreshTimer() }
-        .onDisappear { refreshTimer?.invalidate() }
+        .onDisappear {
+            refreshTimer?.invalidate()
+            refreshTimer = nil
+            loadTask?.cancel()
+            loadTask = nil
+        }
         .onChange(of: selectedDate) { _, _ in loadSummaries() }
     }
 
@@ -68,6 +77,17 @@ struct TimelineView: View {
 
     // MARK: - Empty State
 
+    private var loadingState: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            ProgressView()
+            Text("正在加载时间轴…")
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     private var emptyState: some View {
         VStack(spacing: 12) {
             Spacer()
@@ -89,18 +109,37 @@ struct TimelineView: View {
     // MARK: - Data
 
     private func loadSummaries() {
+        loadTask?.cancel()
+
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: selectedDate)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
         let startMs = Int64(startOfDay.timeIntervalSince1970 * 1000)
         let endMs = Int64(endOfDay.timeIntervalSince1970 * 1000)
+        let database = pipeline.database
 
-        summaries = (try? pipeline.database.summariesInRange(start: startMs, end: endMs)) ?? []
+        isLoading = true
+        loadTask = Task {
+            let loadedSummaries = (try? await Task.detached(priority: .utility) {
+                try database.summariesInRange(start: startMs, end: endMs)
+            }.value) ?? []
+            guard !Task.isCancelled else {
+                await MainActor.run { isLoading = false }
+                return
+            }
+            await MainActor.run {
+                summaries = loadedSummaries
+                isLoading = false
+            }
+        }
     }
 
     private func startRefreshTimer() {
+        refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
-            loadSummaries()
+            Task { @MainActor in
+                loadSummaries()
+            }
         }
     }
 }
