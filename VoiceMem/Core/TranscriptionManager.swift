@@ -53,12 +53,11 @@ final class TranscriptionManager {
         }
 
         isLoading = true
-        loadingProgress = "正在下载模型..."
+        loadingProgress = "正在下载模型文件…"
         defer { isLoading = false; loadingProgress = "" }
 
         logger.info("[Transcription] Loading model \(targetModel)...")
 
-        // Explicitly request ANE for both encoder and decoder
         let computeOptions = ModelComputeOptions(
             audioEncoderCompute: .cpuAndNeuralEngine,
             textDecoderCompute: .cpuAndNeuralEngine
@@ -70,10 +69,29 @@ final class TranscriptionManager {
             logLevel: .none
         )
 
-        loadingProgress = "正在初始化 WhisperKit..."
+        // Phase 1: Download + init (WhisperKit handles download internally)
+        loadingProgress = "正在下载模型文件…"
+        logger.info("[Transcription] Phase 1: downloading \(targetModel)")
+
+        // Start a timer to update progress since WhisperKit doesn't give callbacks
+        let progressTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            self?.loadingProgress = "正在下载模型，请稍候…"
+            try? await Task.sleep(for: .seconds(5))
+            self?.loadingProgress = "正在编译 ANE 模型（首次较慢，约1-3分钟）…"
+            try? await Task.sleep(for: .seconds(10))
+            self?.loadingProgress = "ANE 编译中，请耐心等待…"
+            try? await Task.sleep(for: .seconds(30))
+            self?.loadingProgress = "仍在编译 ANE 模型…"
+        }
+
         let kit = try await WhisperKit(config)
+        progressTask.cancel()
+
         whisperBox = WhisperKitBox(kit)
         currentModelId = targetModel
+        loadingProgress = "模型就绪 ✓"
+        logger.info("[Transcription] Model \(targetModel) fully loaded and compiled")
 
         // Persist the choice
         UserDefaults.standard.set(targetModel, forKey: AppSettingsKey.whisperModel)

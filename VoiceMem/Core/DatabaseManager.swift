@@ -216,4 +216,23 @@ final class DatabaseManager: Sendable {
             try Summary.fetchCount(db)
         }
     }
+
+    // MARK: - Data Management
+
+    /// Delete all transcriptions, summaries, and audio files.
+    func clearAllData() throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM transcriptions_fts")
+            try Transcription.deleteAll(db)
+            try Summary.deleteAll(db)
+        }
+        // Delete audio files
+        let audioDir = AudioEncoder.audioDir
+        if let files = try? FileManager.default.contentsOfDirectory(at: audioDir, includingPropertiesForKeys: nil) {
+            for file in files {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+        logger.info("[Database] All data cleared")
+    }
 }

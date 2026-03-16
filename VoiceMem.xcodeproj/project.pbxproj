@@ -20,6 +20,7 @@
 		93BCC8369DFDA81AB98BAB47 /* StorageCleanup.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F9BF37A6C651A63A592BE6 /* StorageCleanup.swift */; };
 		9C4345F9775DAB3200656814 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1728A8641706F9C85238659 /* AppSettings.swift */; };
 		A494CA4DE036B66CA347D790 /* TranscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 393B8217B5B3EE8FECDC45E5 /* TranscriptionManager.swift */; };
+		A5E814F767241429EB34873A /* PendingSegment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F06CC74CDF26FA98D435BF7 /* PendingSegment.swift */; };
 		B094B919AEF888FCD643C5E3 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11BEA14D6F8F52C57FDC933 /* SettingsView.swift */; };
 		B327510449DC69F369FE8A71 /* VADManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D65C4D0681D3B687B480841C /* VADManager.swift */; };
 		B897DC4AC254068962A16DA5 /* AudioPlaybackManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C54978400CAC5717C360DACA /* AudioPlaybackManager.swift */; };
@@ -55,6 +56,7 @@
 		80CA5D0119A81B1342ADA597 /* LoginItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItem.swift; sourceTree = "<group>"; };
 		84D389E8231513A3E7A13522 /* Transcription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transcription.swift; sourceTree = "<group>"; };
 		8C86746176C20940612CD8C7 /* PipelineCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineCoordinator.swift; sourceTree = "<group>"; };
+		8F06CC74CDF26FA98D435BF7 /* PendingSegment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingSegment.swift; sourceTree = "<group>"; };
 		9DDB64C9444137503E165E91 /* AudioCaptureManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureManager.swift; sourceTree = "<group>"; };
 		9EF8F5711A35E60AE5436C61 /* SleepWake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepWake.swift; sourceTree = "<group>"; };
 		B8CA85708E0FEC72CFD9E68C /* SummaryAggregator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryAggregator.swift; sourceTree = "<group>"; };
@@ -165,6 +167,7 @@
 			children = (
 				E1728A8641706F9C85238659 /* AppSettings.swift */,
 				38FC8D7B6E0D907C5347DD48 /* AudioSegment.swift */,
+				8F06CC74CDF26FA98D435BF7 /* PendingSegment.swift */,
 				7F751DC2EC8FCA78C2013431 /* Summary.swift */,
 				84D389E8231513A3E7A13522 /* Transcription.swift */,
 			);
@@ -277,6 +280,7 @@
 				7000DAA940FD1E0D8B11DEA6 /* DatabaseManager.swift in Sources */,
 				923307499390C2EB75B6BEAF /* LoginItem.swift in Sources */,
 				D73DE1D7C82698D4AB7AB4EF /* MenuBarView.swift in Sources */,
+				A5E814F767241429EB34873A /* PendingSegment.swift in Sources */,
 				D194946C9A335EA8CA31F052 /* Permissions.swift in Sources */,
 				3DAB26B3D7258FD83A2DDA56 /* PipelineCoordinator.swift in Sources */,
 				B094B919AEF888FCD643C5E3 /* SettingsView.swift in Sources */,

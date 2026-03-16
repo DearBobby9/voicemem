@@ -26,9 +26,15 @@ final class PipelineCoordinator {
     private(set) var lastTranscription: Transcription?
     private(set) var error: String?
 
+    /// Segments currently being transcribed — shown as "转录中..." in timeline
+    private(set) var pendingSegments: [PendingSegment] = []
+
+    /// Recently completed transcriptions — drives instant UI updates (no polling)
+    private(set) var recentTranscriptions: [Transcription] = []
+
     /// Whether the user can press "开始录音"
     var canStartRecording: Bool {
-        transcription.isModelLoaded && !isRunning
+        transcription.isModelLoaded && !transcription.isLoading && !isRunning
     }
 
     /// Human-readable status for UI
@@ -191,7 +197,17 @@ final class PipelineCoordinator {
     }
 
     private func encodeTranscribeAndStore(_ segment: AudioSegment) async {
+        // Add to pending immediately — user sees "转录中..." in timeline
+        let pending = PendingSegment(
+            timestampStart: segment.timestampStart,
+            timestampEnd: segment.timestampEnd,
+            durationMs: segment.durationMs
+        )
+        pendingSegments.append(pending)
+        logger.info("[Pipeline] Segment queued for transcription: \(segment.durationMs)ms")
+
         do {
+            // Encode audio
             let audioFilename: String?
             do {
                 audioFilename = try AudioEncoder.encode(segment: segment, sampleRate: audioCapture.sampleRate)
@@ -200,14 +216,23 @@ final class PipelineCoordinator {
                 audioFilename = nil
             }
 
+            // Transcribe
             let result = try await transcription.transcribe(segment: segment)
+
+            // Remove from pending
+            pendingSegments.removeAll { $0.id == pending.id }
+
             guard !result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 
+            // Store and update UI instantly
             let saved = try database.insertTranscription(result)
             lastTranscription = saved
+            recentTranscriptions.insert(saved, at: 0)
+            if recentTranscriptions.count > 100 { recentTranscriptions.removeLast() }
             refreshTodayCount()
             logger.info("[Pipeline] Transcribed: \(result.text.prefix(60))...")
         } catch {
+            pendingSegments.removeAll { $0.id == pending.id }
             logger.error("[Pipeline] Error: \(error.localizedDescription)")
             self.error = error.localizedDescription
         }

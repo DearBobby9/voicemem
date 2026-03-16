@@ -270,6 +270,8 @@ struct SummarySettings: View {
 
 struct StorageSettings: View {
     @AppStorage(AppSettingsKey.audioRetentionDays) private var retention = 7
+    @State private var showClearConfirm = false
+    @State private var clearSuccess: Bool?
 
     var body: some View {
         SettingsPageHeader(title: "存储", description: "管理音频文件保留策略和数据导出")
@@ -312,13 +314,27 @@ struct StorageSettings: View {
                     Text("删除转录、摘要和音频文件，不可恢复").font(.caption).foregroundStyle(.tertiary)
                 }
                 Spacer()
-                Button("清空数据…") { /* TODO: confirmation dialog */ }
+                Button("清空数据…") { showClearConfirm = true }
                     .foregroundStyle(.red)
                     .controlSize(.small)
             }
             .padding(4)
         }
         .padding(.top, 8)
+        .alert("确定要清空所有数据吗？", isPresented: $showClearConfirm) {
+            Button("取消", role: .cancel) { }
+            Button("清空", role: .destructive) {
+                do {
+                    let db = try DatabaseManager()
+                    try db.clearAllData()
+                    clearSuccess = true
+                } catch {
+                    clearSuccess = false
+                }
+            }
+        } message: {
+            Text("这将删除所有转录文本、摘要和音频文件。此操作不可恢复。")
+        }
     }
 
     private func formatBytes(_ bytes: Int64) -> String {
