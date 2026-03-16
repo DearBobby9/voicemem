@@ -37,6 +37,10 @@ struct TimelineView: View {
             Spacer()
             DatePicker("", selection: $selectedDate, displayedComponents: .date)
                 .labelsHidden().datePickerStyle(.compact)
+            SettingsLink {
+                Image(systemName: "gearshape").font(.system(size: 14))
+            }
+            .buttonStyle(.plain).foregroundStyle(.secondary)
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
     }
