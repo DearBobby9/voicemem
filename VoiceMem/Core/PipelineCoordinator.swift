@@ -203,29 +203,23 @@ final class PipelineCoordinator {
 
     private func encodeTranscribeAndStore(_ segment: AudioSegment) async {
         do {
-            let audioPath: String?
+            // Encode audio to WAV at hardware sample rate
+            let audioFilename: String?
             do {
-                audioPath = try AudioEncoder.encode(segment: segment)
+                audioFilename = try AudioEncoder.encode(segment: segment, sampleRate: audioCapture.sampleRate)
             } catch {
                 logger.error("[Pipeline] Audio encoding failed: \(error.localizedDescription)")
-                audioPath = nil
+                audioFilename = nil
             }
 
+            // Transcribe (WhisperKit reads from the WAV file)
             let result = try await transcription.transcribe(segment: segment)
             guard !result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 logger.info("[Pipeline] Skipped empty transcription")
                 return
             }
 
-            let record = Transcription(
-                text: result.text,
-                timestampStart: segment.timestampStart,
-                timestampEnd: segment.timestampEnd,
-                language: result.language,
-                audioPath: audioPath,
-                model: result.model,
-                confidence: result.confidence
-            )
+            let record = result  // TranscriptionManager now returns a full Transcription
 
             let saved = try database.insertTranscription(record)
             lastTranscription = saved

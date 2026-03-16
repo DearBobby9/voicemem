@@ -19,6 +19,9 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: "2.6.0"
+  WhisperKit:
+    url: https://github.com/argmaxinc/WhisperKit
+    from: "0.9.0"
 
 targets:
   VoiceMem:
@@ -52,6 +55,7 @@ targets:
       - package: GRDB
       - package: Sparkle
         product: Sparkle
+      - package: WhisperKit
 
   VoiceMemTests:
     type: bundle.unit-test

@@ -3,9 +3,9 @@ import os
 
 private let logger = Logger(subsystem: "com.voicemem.app", category: "AudioEncoder")
 
-/// Encodes audio segments to FLAC/CAF files for storage.
+/// Encodes audio segments to WAV files for storage and WhisperKit transcription.
 enum AudioEncoder {
-    private static let audioDir: URL = {
+    static let audioDir: URL = {
         let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
         ).first!.appendingPathComponent("VoiceMem/audio", isDirectory: true)
@@ -13,14 +13,14 @@ enum AudioEncoder {
         return appSupport
     }()
 
-    /// Encode an AudioSegment to a CAF file. Returns the relative path.
-    static func encode(segment: AudioSegment) throws -> String {
-        let filename = "\(segment.timestampStart).caf"
+    /// Encode an AudioSegment to a WAV file at the given sample rate. Returns the filename.
+    static func encode(segment: AudioSegment, sampleRate: Double = 48000) throws -> String {
+        let filename = "\(segment.timestampStart).wav"
         let fileURL = audioDir.appendingPathComponent(filename)
 
         guard let format = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
-            sampleRate: 16000,
+            sampleRate: sampleRate,
             channels: 1,
             interleaved: false
         ) else {
@@ -35,12 +35,23 @@ enum AudioEncoder {
         }
 
         buffer.frameLength = AVAudioFrameCount(segment.samples.count)
-        let channelData = buffer.floatChannelData![0]
-        for (i, sample) in segment.samples.enumerated() {
-            channelData[i] = sample
+        // Bulk copy instead of per-sample loop
+        segment.samples.withUnsafeBufferPointer { src in
+            buffer.floatChannelData![0].update(from: src.baseAddress!, count: src.count)
         }
 
-        let file = try AVAudioFile(forWriting: fileURL, settings: format.settings)
+        // Write as WAV (LinearPCM) — WhisperKit handles resampling internally
+        let wavSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: sampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 32,
+            AVLinearPCMIsFloatKey: true,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false
+        ]
+
+        let file = try AVAudioFile(forWriting: fileURL, settings: wavSettings)
         try file.write(from: buffer)
 
         logger.info("[AudioEncoder] Encoded \(segment.durationMs)ms → \(filename)")
@@ -50,6 +61,11 @@ enum AudioEncoder {
     /// Full path for a relative audio filename.
     static func fullPath(for relativePath: String) -> URL {
         audioDir.appendingPathComponent(relativePath)
+    }
+
+    /// Full path for an AudioSegment's WAV file.
+    static func fullPath(for segment: AudioSegment) -> URL {
+        audioDir.appendingPathComponent("\(segment.timestampStart).wav")
     }
 
     /// Total size of all audio files in bytes.

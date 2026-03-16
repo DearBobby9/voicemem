@@ -1,17 +1,23 @@
 import Foundation
+import WhisperKit
 import os
 
 private let logger = Logger(subsystem: "com.voicemem.app", category: "Transcription")
 
-/// Manages WhisperKit ASR model and transcription.
+/// Thread-safe wrapper so WhisperKit can cross isolation boundaries in Swift 6.
+private final class WhisperKitBox: @unchecked Sendable {
+    let kit: WhisperKit
+    init(_ kit: WhisperKit) { self.kit = kit }
+}
+
+/// Manages WhisperKit ASR model — loads once, transcribes audio segments on demand.
 @MainActor
 @Observable
 final class TranscriptionManager {
+    private var whisperBox: WhisperKitBox?
     private(set) var isModelLoaded = false
+    private(set) var isLoading = false
     private(set) var modelName = "large-v3-v20240930_turbo"
-
-    // TODO: Replace with actual WhisperKit instance when SPM dependency is added
-    // private var whisperKit: WhisperKit?
 
     init() {
         logger.info("[Transcription] Initialized, model=\(self.modelName)")
@@ -19,19 +25,21 @@ final class TranscriptionManager {
 
     // MARK: - Model Lifecycle
 
-    /// Load WhisperKit model. First call downloads the model (~632MB).
+    /// Load WhisperKit model. First run downloads ~632MB and compiles for ANE.
     func loadModel() async throws {
         guard !isModelLoaded else { return }
+        isLoading = true
+        defer { isLoading = false }
 
         logger.info("[Transcription] Loading model \(self.modelName)...")
 
-        // TODO: Initialize WhisperKit with ANE compute
-        // whisperKit = try await WhisperKit(
-        //     WhisperKitConfig(model: modelName, computeOptions: .init(audioEncoderCompute: .cpuAndNeuralEngine))
-        // )
-
-        // Placeholder: simulate model loading
-        try await Task.sleep(for: .milliseconds(100))
+        let config = WhisperKitConfig(
+            model: modelName,
+            verbose: false,
+            logLevel: .none
+        )
+        let kit = try await WhisperKit(config)
+        whisperBox = WhisperKitBox(kit)
 
         isModelLoaded = true
         logger.info("[Transcription] Model loaded successfully")
@@ -39,37 +47,39 @@ final class TranscriptionManager {
 
     // MARK: - Transcribe
 
-    /// Transcribe an audio segment. Returns a Transcription record.
+    /// Transcribe an audio segment via its saved WAV file.
     func transcribe(segment: AudioSegment) async throws -> Transcription {
-        guard isModelLoaded else {
+        guard let box = whisperBox, isModelLoaded else {
             throw TranscriptionError.modelNotLoaded
         }
 
-        logger.info("[Transcription] Transcribing \(segment.durationMs)ms segment...")
+        let audioPath = AudioEncoder.fullPath(for: segment)
+        let path = audioPath.path
+        let segStart = segment.timestampStart
+        let segEnd = segment.timestampEnd
+        let model = modelName
 
-        // TODO: Replace with actual WhisperKit transcription
-        // let result = try await whisperKit!.transcribe(
-        //     audioArray: segment.samples,
-        //     decodeOptions: DecodingOptions(
-        //         language: "zh",
-        //         wordTimestamps: true
-        //     )
-        // )
+        logger.info("[Transcription] Transcribing \(segment.durationMs)ms from \(audioPath.lastPathComponent)...")
 
-        // Placeholder: return a dummy transcription for development
-        let text = "[WhisperKit placeholder — model integration pending]"
+        // Run transcription off MainActor to avoid blocking UI
+        let (text, language) = try await Task.detached(priority: .userInitiated) {
+            let results = try await box.kit.transcribe(audioPath: path)
+            let text = results.map { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            let language = results.first?.language
+            return (text, language)
+        }.value
 
-        let transcription = Transcription(
+        logger.info("[Transcription] Result (\(text.count) chars): \(text.prefix(80))...")
+
+        return Transcription(
             text: text,
-            timestampStart: segment.timestampStart,
-            timestampEnd: segment.timestampEnd,
-            language: "zh",
-            model: modelName,
-            confidence: 0.0
+            timestampStart: segStart,
+            timestampEnd: segEnd,
+            language: language,
+            audioPath: audioPath.lastPathComponent,
+            model: model,
+            confidence: nil
         )
-
-        logger.info("[Transcription] Result: \(text.prefix(80))...")
-        return transcription
     }
 }
 

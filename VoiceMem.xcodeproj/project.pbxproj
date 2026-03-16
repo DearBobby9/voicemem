@@ -16,6 +16,7 @@
 		638488163D3AF19D07F211E6 /* AudioCaptureManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DDB64C9444137503E165E91 /* AudioCaptureManager.swift */; };
 		7000DAA940FD1E0D8B11DEA6 /* DatabaseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61EA0FA08EE768D1CEC8061B /* DatabaseManager.swift */; };
 		923307499390C2EB75B6BEAF /* LoginItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80CA5D0119A81B1342ADA597 /* LoginItem.swift */; };
+		925CD36E06C93F8455498F4C /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 167C047817C51AE8E28D1D69 /* WhisperKit */; };
 		93BCC8369DFDA81AB98BAB47 /* StorageCleanup.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8F9BF37A6C651A63A592BE6 /* StorageCleanup.swift */; };
 		A494CA4DE036B66CA347D790 /* TranscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 393B8217B5B3EE8FECDC45E5 /* TranscriptionManager.swift */; };
 		B094B919AEF888FCD643C5E3 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11BEA14D6F8F52C57FDC933 /* SettingsView.swift */; };
@@ -69,6 +70,7 @@
 			files = (
 				5726CE5983B966103719AF0D /* GRDB in Frameworks */,
 				FE3F9824AC3371C55884698A /* Sparkle in Frameworks */,
+				925CD36E06C93F8455498F4C /* WhisperKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -191,6 +193,7 @@
 			packageProductDependencies = (
 				6D4AFACB0744EC6D5B6546A2 /* GRDB */,
 				2C5651C22A87A39E4B9590D5 /* Sparkle */,
+				167C047817C51AE8E28D1D69 /* WhisperKit */,
 			);
 			productName = VoiceMem;
 			productReference = 3A0D29275208FEDC60524F61 /* VoiceMem.app */;
@@ -236,6 +239,7 @@
 			packageReferences = (
 				E6BDB850912844DD29DC5B69 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
 				925345295C2C3DFF1CEECB4F /* XCRemoteSwiftPackageReference "Sparkle" */,
+				FAF4C8D236A4DD4BF98532EC /* XCRemoteSwiftPackageReference "WhisperKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
@@ -527,9 +531,22 @@
 				minimumVersion = 7.0.0;
 			};
 		};
+		FAF4C8D236A4DD4BF98532EC /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/argmaxinc/WhisperKit";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		167C047817C51AE8E28D1D69 /* WhisperKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FAF4C8D236A4DD4BF98532EC /* XCRemoteSwiftPackageReference "WhisperKit" */;
+			productName = WhisperKit;
+		};
 		2C5651C22A87A39E4B9590D5 /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 925345295C2C3DFF1CEECB4F /* XCRemoteSwiftPackageReference "Sparkle" */;
