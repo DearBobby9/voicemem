@@ -19,7 +19,8 @@ final class AudioCaptureManager {
     private(set) var sampleRate: Double = 48000  // actual hardware rate
 
     /// Called with each audio buffer (PCM Float32, hardware sample rate, mono ch0).
-    var onAudioBuffer: ((_ samples: [Float], _ timestamp: Int64) -> Void)?
+    /// nonisolated(unsafe): read from audio render thread, written from @MainActor only.
+    nonisolated(unsafe) var onAudioBuffer: ((_ samples: [Float], _ timestamp: Int64) -> Void)?
 
     init() {
         observeDeviceChanges()
@@ -40,19 +41,29 @@ final class AudioCaptureManager {
 
         updateDeviceName()
 
-        // Capture callback on @MainActor before installing tap on audio thread
-        let callback = self.onAudioBuffer
+        // Capture self weakly so the tap always reads the CURRENT onAudioBuffer value.
+        // A value-copy (`let callback = self.onAudioBuffer`) would freeze a nil if the
+        // callback is re-assigned after start(), or silently break on device-change restarts.
+        weak var weakSelf = self
 
         // Tap at hardware native format — zero conversion, zero crash risk
+        var tapCount = 0
         inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: hwFormat) { buffer, _ in
             guard let channelData = buffer.floatChannelData else { return }
 
             let frameCount = Int(buffer.frameLength)
-            // Take first channel only (mono)
             let samples = Array(UnsafeBufferPointer(start: channelData[0], count: frameCount))
             let timestampMs = Int64(Date().timeIntervalSince1970 * 1000)
 
-            callback?(samples, timestampMs)
+            // Direct tap-level log (every 500 buffers ≈ every ~40s at 48kHz/4096)
+            tapCount += 1
+            if tapCount <= 3 || tapCount % 500 == 0 {
+                let rms = sqrt(samples.reduce(0) { $0 + $1 * $1 } / max(1, Float(samples.count)))
+                let hasCallback = weakSelf?.onAudioBuffer != nil
+                logger.info("[AudioCapture] Tap #\(tapCount): \(frameCount) frames, RMS=\(String(format: "%.6f", rms)), callback=\(hasCallback)")
+            }
+
+            weakSelf?.onAudioBuffer?(samples, timestampMs)
         }
 
         try engine.start()
