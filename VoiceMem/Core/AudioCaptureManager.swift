@@ -10,6 +10,7 @@ private let logger = Logger(subsystem: "com.voicemem.app", category: "AudioCaptu
 final class AudioCaptureManager {
     private var engine: AVAudioEngine?
     private var converter: AVAudioConverter?
+    private var configChangeObserver: (any NSObjectProtocol)?  // S5: store observer token
     private let targetSampleRate: Double = 16000
     private let targetChannels: AVAudioChannelCount = 1
     private let bufferSize: AVAudioFrameCount = 4096
@@ -33,7 +34,6 @@ final class AudioCaptureManager {
         self.engine = engine
         let inputNode = engine.inputNode
 
-        // Use the hardware's native format for the tap — no render graph manipulation
         let hwFormat = inputNode.outputFormat(forBus: 0)
         logger.info("[AudioCapture] Hardware format: \(hwFormat.sampleRate)Hz, \(hwFormat.channelCount)ch")
 
@@ -46,7 +46,6 @@ final class AudioCaptureManager {
             throw AudioCaptureError.formatCreationFailed
         }
 
-        // Create converter: hwFormat → 16kHz mono
         guard let conv = AVAudioConverter(from: hwFormat, to: targetFormat) else {
             logger.error("[AudioCapture] Failed to create audio converter \(hwFormat.sampleRate)Hz → \(self.targetSampleRate)Hz")
             throw AudioCaptureError.converterCreationFailed
@@ -55,11 +54,12 @@ final class AudioCaptureManager {
 
         updateDeviceName()
 
-        // Capture converter for use on audio thread (avoids @MainActor access)
+        // C1: Capture callback by value on @MainActor before installing tap on audio thread
+        let callback = self.onAudioBuffer
         let audioConverter = conv
         let targetRate = targetSampleRate
 
-        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: hwFormat) { [weak self] buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: hwFormat) { buffer, _ in
             let ratio = targetRate / buffer.format.sampleRate
             let outputFrameCount = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
 
@@ -68,8 +68,15 @@ final class AudioCaptureManager {
                 frameCapacity: outputFrameCount
             ) else { return }
 
+            // C2: Track whether input buffer was already consumed
+            var inputBufferProvided = false
             var error: NSError?
             let status = audioConverter.convert(to: outputBuffer, error: &error) { _, outStatus in
+                if inputBufferProvided {
+                    outStatus.pointee = .noDataNow
+                    return nil
+                }
+                inputBufferProvided = true
                 outStatus.pointee = .haveData
                 return buffer
             }
@@ -83,7 +90,7 @@ final class AudioCaptureManager {
             let samples = Array(UnsafeBufferPointer(start: channelData[0], count: frameCount))
             let timestampMs = Int64(Date().timeIntervalSince1970 * 1000)
 
-            self?.onAudioBuffer?(samples, timestampMs)
+            callback?(samples, timestampMs)
         }
 
         try engine.start()
@@ -149,8 +156,9 @@ final class AudioCaptureManager {
         #endif
     }
 
+    // S5: Store observer token so device change notifications actually fire
     private func observeDeviceChanges() {
-        NotificationCenter.default.addObserver(
+        configChangeObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange,
             object: nil,
             queue: .main

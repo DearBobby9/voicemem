@@ -7,7 +7,6 @@ private let logger = Logger(subsystem: "com.voicemem.app", category: "Pipeline")
 /// AudioCapture → VAD → Transcription → Database → SummaryAggregation.
 ///
 /// This class lives in Core/ and does NOT depend on any UI.
-/// @MainActor because it holds @Observable state consumed by SwiftUI.
 @MainActor
 @Observable
 final class PipelineCoordinator {
@@ -17,7 +16,8 @@ final class PipelineCoordinator {
     let database: DatabaseManager
     let aggregator: SummaryAggregator
 
-    private var sleepWakeMonitor: SleepWakeMonitor?  // C2: must keep strong ref
+    private var sleepWakeMonitor: SleepWakeMonitor?
+    private var vadBusy = false  // I2: back-pressure for audio→VAD path
 
     private(set) var isRunning = false
     private(set) var isPaused = false
@@ -43,7 +43,7 @@ final class PipelineCoordinator {
         guard !isRunning else { return }
         error = nil
 
-        // C3: Request microphone permission before starting
+        // Check microphone permission
         let granted = await PermissionManager.requestMicrophoneAccess()
         guard granted else {
             self.error = "需要麦克风权限才能录音。请在系统设置中允许。"
@@ -51,12 +51,18 @@ final class PipelineCoordinator {
             return
         }
 
+        // I1: Apply settings from UserDefaults
+        applySettings()
+
         try await transcription.loadModel()
         try audioCapture.start()
         aggregator.start()
-        aggregator.backfillMissingSummaries()
 
-        // C2: Instantiate sleep/wake monitor
+        // I5: Run backfill async to avoid blocking main actor
+        Task { @MainActor in
+            aggregator.backfillMissingSummaries()
+        }
+
         sleepWakeMonitor = SleepWakeMonitor(pipeline: self)
 
         // Schedule storage cleanup
@@ -71,6 +77,8 @@ final class PipelineCoordinator {
     func stop() {
         audioCapture.stop()
         aggregator.stop()
+        sleepWakeMonitor?.removeAllObservers()
+        sleepWakeMonitor = nil
         isRunning = false
         isPaused = false
         logger.info("[Pipeline] Stopped")
@@ -96,13 +104,27 @@ final class PipelineCoordinator {
         }
     }
 
+    // MARK: - Settings (I1)
+
+    func applySettings() {
+        let defaults = UserDefaults.standard
+        let threshold = defaults.double(forKey: "vadThreshold")
+        if threshold > 0 {
+            vad.threshold = Float(threshold)
+            logger.info("[Pipeline] Applied VAD threshold: \(threshold)")
+        }
+    }
+
     // MARK: - Wiring
 
     private func wireCallbacks() {
-        // C1: Audio callback runs on audio thread → dispatch to main actor for VAD
+        // Audio → VAD (with back-pressure: drop if busy)
         audioCapture.onAudioBuffer = { [weak self] samples, timestamp in
             Task { @MainActor [weak self] in
-                self?.vad.process(samples: samples, timestamp: timestamp)
+                guard let self, !self.vadBusy else { return }
+                self.vadBusy = true
+                self.vad.process(samples: samples, timestamp: timestamp)
+                self.vadBusy = false
             }
         }
 
@@ -114,7 +136,6 @@ final class PipelineCoordinator {
         }
     }
 
-    // C4: Encode audio + transcribe + store
     private func encodeTranscribeAndStore(_ segment: AudioSegment) async {
         do {
             // Save audio file to disk
@@ -134,7 +155,7 @@ final class PipelineCoordinator {
             }
 
             // Store with audio path
-            let transcription = Transcription(
+            let transcriptionRecord = Transcription(
                 text: result.text,
                 timestampStart: segment.timestampStart,
                 timestampEnd: segment.timestampEnd,
@@ -144,7 +165,7 @@ final class PipelineCoordinator {
                 confidence: result.confidence
             )
 
-            let record = try database.insertTranscription(transcription)
+            let record = try database.insertTranscription(transcriptionRecord)
             lastTranscription = record
             refreshTodayCount()
 

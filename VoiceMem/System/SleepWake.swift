@@ -5,76 +5,77 @@ import os
 private let logger = Logger(subsystem: "com.voicemem.app", category: "SleepWake")
 
 /// Handles macOS sleep/wake events — pauses recording on sleep, resumes on wake.
+/// I3+I4: uses closure-based observers (no NSObject needed) with proper cleanup.
 @MainActor
 final class SleepWakeMonitor {
     private weak var pipeline: PipelineCoordinator?
     private var wasRunningBeforeSleep = false
+    private var observers: [any NSObjectProtocol] = []
 
     init(pipeline: PipelineCoordinator) {
         self.pipeline = pipeline
-        observeNotifications()
+        registerObservers()
     }
 
-    private func observeNotifications() {
-        let workspace = NSWorkspace.shared.notificationCenter
-
-        workspace.addObserver(
-            self,
-            selector: #selector(handleSleep),
-            name: NSWorkspace.willSleepNotification,
-            object: nil
-        )
-
-        workspace.addObserver(
-            self,
-            selector: #selector(handleWake),
-            name: NSWorkspace.didWakeNotification,
-            object: nil
-        )
-
-        workspace.addObserver(
-            self,
-            selector: #selector(handleScreensOff),
-            name: NSWorkspace.screensDidSleepNotification,
-            object: nil
-        )
-
-        workspace.addObserver(
-            self,
-            selector: #selector(handleScreensOn),
-            name: NSWorkspace.screensDidWakeNotification,
-            object: nil
-        )
-    }
-
-    @objc private func handleSleep(_ notification: Notification) {
-        Task { @MainActor [weak self] in
-            guard let self, let pipeline = self.pipeline else { return }
-            self.wasRunningBeforeSleep = pipeline.isRunning && !pipeline.isPaused
-            if self.wasRunningBeforeSleep {
-                pipeline.pause()
-            }
-            logger.info("[SleepWake] System sleeping, was running: \(self.wasRunningBeforeSleep)")
+    func removeAllObservers() {
+        for observer in observers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
+        observers.removeAll()
     }
 
-    @objc private func handleWake(_ notification: Notification) {
-        Task { @MainActor [weak self] in
-            guard let self, let pipeline = self.pipeline, self.wasRunningBeforeSleep else { return }
-            do {
-                try pipeline.resume()
-                logger.info("[SleepWake] System woke, resumed recording")
-            } catch {
-                logger.error("[SleepWake] Failed to resume after wake: \(error.localizedDescription)")
+    private func registerObservers() {
+        let center = NSWorkspace.shared.notificationCenter
+
+        observers.append(center.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleSleep()
             }
+        })
+
+        observers.append(center.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleWake()
+            }
+        })
+
+        observers.append(center.addObserver(
+            forName: NSWorkspace.screensDidSleepNotification,
+            object: nil, queue: .main
+        ) { _ in
+            logger.info("[SleepWake] Screens off (lid closed)")
+        })
+
+        observers.append(center.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification,
+            object: nil, queue: .main
+        ) { _ in
+            logger.info("[SleepWake] Screens on (lid opened)")
+        })
+    }
+
+    private func handleSleep() {
+        guard let pipeline else { return }
+        wasRunningBeforeSleep = pipeline.isRunning && !pipeline.isPaused
+        if wasRunningBeforeSleep {
+            pipeline.pause()
         }
+        logger.info("[SleepWake] System sleeping, was running: \(self.wasRunningBeforeSleep)")
     }
 
-    @objc private func handleScreensOff(_ notification: Notification) {
-        logger.info("[SleepWake] Screens off (lid closed)")
-    }
-
-    @objc private func handleScreensOn(_ notification: Notification) {
-        logger.info("[SleepWake] Screens on (lid opened)")
+    private func handleWake() {
+        guard let pipeline, wasRunningBeforeSleep else { return }
+        do {
+            try pipeline.resume()
+            logger.info("[SleepWake] System woke, resumed recording")
+        } catch {
+            logger.error("[SleepWake] Failed to resume: \(error.localizedDescription)")
+        }
     }
 }

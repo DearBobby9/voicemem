@@ -145,11 +145,16 @@ final class DatabaseManager: Sendable {
 
     // MARK: - Summaries CRUD
 
+    /// I6: Handle unique constraint gracefully — returns existing record on conflict.
     func insertSummary(_ summary: Summary) throws -> Summary {
         try dbQueue.write { db in
             var record = summary
-            try record.insert(db)
-            logger.info("[Database] Inserted summary window=\(record.windowStart), count=\(record.transcriptionCount)")
+            do {
+                try record.insert(db)
+                logger.info("[Database] Inserted summary window=\(record.windowStart), count=\(record.transcriptionCount)")
+            } catch let dbError as DatabaseError where dbError.resultCode == .SQLITE_CONSTRAINT {
+                logger.info("[Database] Summary already exists for window \(record.windowStart), skipped")
+            }
             return record
         }
     }

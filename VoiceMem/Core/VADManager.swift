@@ -54,7 +54,7 @@ final class VADManager {
         if isSpeech {
             handleSpeechDetected(samples: samples, timestamp: timestamp)
         } else {
-            handleSilenceDetected(timestamp: timestamp)
+            handleSilenceDetected(samples: samples, timestamp: timestamp)
         }
     }
 
@@ -79,12 +79,15 @@ final class VADManager {
         }
     }
 
-    private func handleSilenceDetected(timestamp: Int64) {
+    private func handleSilenceDetected(samples: [Float], timestamp: Int64) {
         guard speechStartTimestamp != nil else { return }
+
+        // S1: Keep accumulating during silence grace period to avoid clipping final word
+        accumulatedSamples.append(contentsOf: samples)
 
         // Check if silence has lasted long enough to trigger segment end
         if (timestamp - lastSpeechTimestamp) >= silenceTriggerMs {
-            emitSegment(endTimestamp: lastSpeechTimestamp)
+            emitSegment(endTimestamp: timestamp)
         }
     }
 
