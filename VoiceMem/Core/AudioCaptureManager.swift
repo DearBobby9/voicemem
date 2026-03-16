@@ -3,17 +3,20 @@ import os
 
 private let logger = Logger(subsystem: "com.voicemem.app", category: "AudioCapture")
 
-/// Captures audio from the microphone via AVAudioEngine at 16kHz mono.
-/// Taps at hardware native format, then resamples via AVAudioConverter.
+/// Captures audio from the microphone via AVAudioEngine.
+/// Taps at hardware native format, converts to 16kHz mono via DispatchQueue
+/// (off the realtime audio thread to avoid render graph crashes).
 @MainActor
 @Observable
 final class AudioCaptureManager {
     private var engine: AVAudioEngine?
     private var converter: AVAudioConverter?
-    private var configChangeObserver: (any NSObjectProtocol)?  // S5: store observer token
+    private var configChangeObserver: (any NSObjectProtocol)?
     private let targetSampleRate: Double = 16000
     private let targetChannels: AVAudioChannelCount = 1
     private let bufferSize: AVAudioFrameCount = 4096
+    /// Serial queue for audio conversion (off the realtime render thread)
+    private let conversionQueue = DispatchQueue(label: "com.voicemem.audioconversion", qos: .userInitiated)
 
     private(set) var isCapturing = false
     private(set) var currentDeviceName: String = "Unknown"
@@ -47,50 +50,72 @@ final class AudioCaptureManager {
         }
 
         guard let conv = AVAudioConverter(from: hwFormat, to: targetFormat) else {
-            logger.error("[AudioCapture] Failed to create audio converter \(hwFormat.sampleRate)Hz → \(self.targetSampleRate)Hz")
+            logger.error("[AudioCapture] Failed to create audio converter")
             throw AudioCaptureError.converterCreationFailed
         }
         self.converter = conv
 
         updateDeviceName()
 
-        // C1: Capture callback by value on @MainActor before installing tap on audio thread
+        // Capture everything needed by the tap closure
         let callback = self.onAudioBuffer
         let audioConverter = conv
         let targetRate = targetSampleRate
+        let queue = conversionQueue
 
+        // Tap at hardware native format — then bounce to conversionQueue for resampling
+        // (AVAudioConverter must NOT run on the realtime audio render thread)
         inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: hwFormat) { buffer, _ in
-            let ratio = targetRate / buffer.format.sampleRate
-            let outputFrameCount = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
-
-            guard let outputBuffer = AVAudioPCMBuffer(
-                pcmFormat: audioConverter.outputFormat,
-                frameCapacity: outputFrameCount
-            ) else { return }
-
-            // C2: Track whether input buffer was already consumed
-            var inputBufferProvided = false
-            var error: NSError?
-            let status = audioConverter.convert(to: outputBuffer, error: &error) { _, outStatus in
-                if inputBufferProvided {
-                    outStatus.pointee = .noDataNow
-                    return nil
-                }
-                inputBufferProvided = true
-                outStatus.pointee = .haveData
-                return buffer
-            }
-
-            guard status == .haveData || status == .endOfStream,
-                  error == nil,
-                  let channelData = outputBuffer.floatChannelData,
-                  outputBuffer.frameLength > 0 else { return }
-
-            let frameCount = Int(outputBuffer.frameLength)
-            let samples = Array(UnsafeBufferPointer(start: channelData[0], count: frameCount))
+            // Copy buffer data immediately on the audio thread (cheap memcpy)
+            guard let channelData = buffer.floatChannelData else { return }
+            let frameCount = Int(buffer.frameLength)
+            let rawSamples = Array(UnsafeBufferPointer(start: channelData[0], count: frameCount))
+            let sampleRate = buffer.format.sampleRate
             let timestampMs = Int64(Date().timeIntervalSince1970 * 1000)
 
-            callback?(samples, timestampMs)
+            // Convert on a non-realtime queue
+            queue.async {
+                let ratio = targetRate / sampleRate
+                let outputFrameCount = AVAudioFrameCount(Double(frameCount) * ratio)
+
+                guard let inputFormat = AVAudioFormat(
+                    commonFormat: .pcmFormatFloat32,
+                    sampleRate: sampleRate,
+                    channels: 1,
+                    interleaved: false
+                ),
+                let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: AVAudioFrameCount(frameCount)),
+                let outputBuffer = AVAudioPCMBuffer(pcmFormat: audioConverter.outputFormat, frameCapacity: outputFrameCount)
+                else { return }
+
+                // Fill input buffer
+                inputBuffer.frameLength = AVAudioFrameCount(frameCount)
+                rawSamples.withUnsafeBufferPointer { src in
+                    inputBuffer.floatChannelData![0].update(from: src.baseAddress!, count: src.count)
+                }
+
+                var inputProvided = false
+                var error: NSError?
+                let status = audioConverter.convert(to: outputBuffer, error: &error) { _, outStatus in
+                    if inputProvided {
+                        outStatus.pointee = .noDataNow
+                        return nil
+                    }
+                    inputProvided = true
+                    outStatus.pointee = .haveData
+                    return inputBuffer
+                }
+
+                guard status == .haveData || status == .endOfStream,
+                      error == nil,
+                      let outData = outputBuffer.floatChannelData,
+                      outputBuffer.frameLength > 0 else { return }
+
+                let convertedCount = Int(outputBuffer.frameLength)
+                let samples = Array(UnsafeBufferPointer(start: outData[0], count: convertedCount))
+
+                callback?(samples, timestampMs)
+            }
         }
 
         try engine.start()
@@ -156,7 +181,6 @@ final class AudioCaptureManager {
         #endif
     }
 
-    // S5: Store observer token so device change notifications actually fire
     private func observeDeviceChanges() {
         configChangeObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange,
@@ -170,7 +194,7 @@ final class AudioCaptureManager {
                 do {
                     try self.start()
                 } catch {
-                    logger.error("[AudioCapture] Failed to restart after config change: \(error.localizedDescription)")
+                    logger.error("[AudioCapture] Failed to restart: \(error.localizedDescription)")
                 }
             }
         }

@@ -43,23 +43,20 @@ struct VoiceMemApp: App {
 // MARK: - AppDelegate
 
 final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
-    var pipeline: PipelineCoordinator?
+    @Published var pipeline: PipelineCoordinator?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         logger.info("[App] Launching VoiceMem")
-
-        // Hide from Dock (LSUIElement handles this, but ensure it)
         NSApp.setActivationPolicy(.accessory)
 
-        // Initialize pipeline
         do {
-            pipeline = try PipelineCoordinator()
+            let p = try PipelineCoordinator()
+            self.pipeline = p
             logger.info("[App] Pipeline initialized")
 
-            // Auto-start recording
             Task {
                 do {
-                    try await pipeline?.start()
+                    try await p.start()
                     logger.info("[App] Pipeline started")
                 } catch {
                     logger.error("[App] Pipeline start failed: \(error.localizedDescription)")
