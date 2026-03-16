@@ -4,12 +4,13 @@ import os
 private let logger = Logger(subsystem: "com.voicemem.app", category: "AudioCapture")
 
 /// Captures audio from the microphone via AVAudioEngine at 16kHz mono.
+/// Uses a mixer node to resample from hardware rate (e.g. 48kHz) to 16kHz.
 /// Forwards PCM Float32 buffers to a callback for VAD processing.
-/// @MainActor: observable state read by SwiftUI; audio tap dispatches to main.
 @MainActor
 @Observable
 final class AudioCaptureManager {
     private var engine: AVAudioEngine?
+    private var mixerNode: AVAudioMixerNode?
     private let targetSampleRate: Double = 16000
     private let targetChannels: AVAudioChannelCount = 1
     private let bufferSize: AVAudioFrameCount = 4096
@@ -32,21 +33,37 @@ final class AudioCaptureManager {
         let engine = AVAudioEngine()
         self.engine = engine
         let inputNode = engine.inputNode
+        let hwFormat = inputNode.outputFormat(forBus: 0)
 
-        // Request 16kHz mono — AVAudioEngine converts from hardware rate automatically
-        guard let format = AVAudioFormat(
+        logger.info("[AudioCapture] Hardware format: \(hwFormat.sampleRate)Hz, \(hwFormat.channelCount)ch")
+
+        // Target format: 16kHz mono Float32
+        guard let targetFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: targetSampleRate,
             channels: targetChannels,
             interleaved: false
         ) else {
-            logger.error("[AudioCapture] Failed to create target audio format")
             throw AudioCaptureError.formatCreationFailed
         }
 
-        updateDeviceName(inputNode: inputNode)
+        // Insert a mixer node between input and output to handle resampling.
+        // AVAudioEngine resamples automatically when connecting nodes with different formats.
+        let mixer = AVAudioMixerNode()
+        self.mixerNode = mixer
+        engine.attach(mixer)
 
-        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: format) { [weak self] buffer, time in
+        // input (hwFormat) → mixer → mainMixer
+        engine.connect(inputNode, to: mixer, format: hwFormat)
+        engine.connect(mixer, to: engine.mainMixerNode, format: targetFormat)
+
+        // Mute output to prevent feedback
+        engine.mainMixerNode.outputVolume = 0
+
+        updateDeviceName()
+
+        // Install tap on mixer node at target format (16kHz mono)
+        mixer.installTap(onBus: 0, bufferSize: bufferSize, format: targetFormat) { [weak self] buffer, _ in
             guard let self, let channelData = buffer.floatChannelData else { return }
 
             let frameCount = Int(buffer.frameLength)
@@ -58,13 +75,17 @@ final class AudioCaptureManager {
 
         try engine.start()
         isCapturing = true
-        logger.info("[AudioCapture] Started capturing from \(self.currentDeviceName) at \(self.targetSampleRate)Hz mono")
+        logger.info("[AudioCapture] Started: \(self.currentDeviceName), \(hwFormat.sampleRate)Hz → \(self.targetSampleRate)Hz mono")
     }
 
     func stop() {
-        engine?.inputNode.removeTap(onBus: 0)
+        mixerNode?.removeTap(onBus: 0)
         engine?.stop()
+        if let mixer = mixerNode {
+            engine?.detach(mixer)
+        }
         engine = nil
+        mixerNode = nil
         isCapturing = false
         logger.info("[AudioCapture] Stopped")
     }
@@ -87,8 +108,7 @@ final class AudioCaptureManager {
 
     // MARK: - Device Management
 
-    private func updateDeviceName(inputNode: AVAudioInputNode) {
-        // Try to get the device name from the input node's audio unit
+    private func updateDeviceName() {
         #if os(macOS)
         var deviceID: AudioDeviceID = 0
         var propertySize = UInt32(MemoryLayout<AudioDeviceID>.size)
@@ -104,18 +124,25 @@ final class AudioCaptureManager {
             &propertySize,
             &deviceID
         )
-        if status == noErr {
-            var nameAddress = AudioObjectPropertyAddress(
-                mSelector: kAudioDevicePropertyDeviceNameCFString,
-                mScope: kAudioObjectPropertyScopeGlobal,
-                mElement: kAudioObjectPropertyElementMain
-            )
-            var name: Unmanaged<CFString>?
-            var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-            let nameStatus = AudioObjectGetPropertyData(deviceID, &nameAddress, 0, nil, &nameSize, &name)
-            if nameStatus == noErr, let cfName = name?.takeUnretainedValue() {
-                currentDeviceName = cfName as String
-            }
+        guard status == noErr else { return }
+
+        var nameSize: UInt32 = 0
+        var nameAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceNameCFString,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        // Get size first
+        AudioObjectGetPropertyDataSize(deviceID, &nameAddress, 0, nil, &nameSize)
+        guard nameSize > 0 else { return }
+
+        var name: CFString = "" as CFString
+        let nameStatus = withUnsafeMutablePointer(to: &name) { ptr in
+            var size = UInt32(MemoryLayout<CFString>.size)
+            return AudioObjectGetPropertyData(deviceID, &nameAddress, 0, nil, &size, ptr)
+        }
+        if nameStatus == noErr {
+            currentDeviceName = name as String
         }
         #endif
     }
