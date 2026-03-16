@@ -8,13 +8,11 @@ struct VoiceMemApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
-        // Main timeline window
         Window("VoiceMem", id: "timeline") {
             AppWindowRootView(appDelegate: appDelegate)
         }
-        .defaultSize(width: 420, height: 700)
+        .defaultSize(width: 780, height: 620)
 
-        // Menu bar icon
         MenuBarExtra {
             AppMenuBarRootView(appDelegate: appDelegate)
         } label: {
@@ -22,7 +20,6 @@ struct VoiceMemApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        // Settings
         Settings {
             SettingsView()
         }
@@ -40,22 +37,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         logger.info("[App] Launching VoiceMem")
         NSApp.setActivationPolicy(.accessory)
         UserDefaults.registerVoiceMemDefaults()
-        launchError = nil
 
         do {
             let p = try PipelineCoordinator()
             self.pipeline = p
-            logger.info("[App] Pipeline initialized")
+            logger.info("[App] Pipeline initialized (not recording — user must start)")
 
+            // Auto-load model if previously downloaded (fast, from cache)
             Task {
-                do {
-                    try await p.start()
-                    logger.info("[App] Pipeline started")
-                } catch {
-                    logger.error("[App] Pipeline start failed: \(error.localizedDescription)")
-                    self.pipeline = nil
-                    self.launchError = error.localizedDescription
-                }
+                await p.tryAutoLoadModel()
             }
         } catch {
             logger.error("[App] Pipeline init failed: \(error.localizedDescription)")
@@ -78,14 +68,11 @@ struct AppWindowRootView: View {
         Group {
             if let pipeline = appDelegate.pipeline {
                 TimelineView(pipeline: pipeline)
-            } else if let launchError = appDelegate.launchError {
-                ContentUnavailableView(
-                    "启动失败",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(launchError)
-                )
+            } else if let error = appDelegate.launchError {
+                ContentUnavailableView("启动失败", systemImage: "exclamationmark.triangle",
+                                       description: Text(error))
             } else {
-                ProgressView("Loading...")
+                ProgressView("正在初始化…")
             }
         }
     }
@@ -98,29 +85,13 @@ struct AppMenuBarRootView: View {
         Group {
             if let pipeline = appDelegate.pipeline {
                 MenuBarView(pipeline: pipeline)
-            } else if let launchError = appDelegate.launchError {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("VoiceMem 启动失败", systemImage: "exclamationmark.triangle")
-                        .font(.headline)
-                    Text(launchError)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button("退出 VoiceMem") {
-                        NSApplication.shared.terminate(nil)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding()
-                .frame(width: 280)
             } else {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("正在启动 VoiceMem…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                VStack(spacing: 8) {
+                    Text("VoiceMem 未就绪").font(.caption)
+                    Button("退出") { NSApplication.shared.terminate(nil) }
+                        .font(.caption).buttonStyle(.plain)
                 }
-                .padding()
-                .frame(width: 220)
+                .padding().frame(width: 200)
             }
         }
     }
@@ -130,16 +101,12 @@ struct AppMenuBarLabelView: View {
     @ObservedObject var appDelegate: AppDelegate
 
     var body: some View {
-        Label("VoiceMem", systemImage: systemImage)
+        Label("VoiceMem", systemImage: iconName)
     }
 
-    private var systemImage: String {
-        guard let pipeline = appDelegate.pipeline else {
-            return appDelegate.launchError == nil ? "waveform.circle" : "waveform.slash"
-        }
-        if !pipeline.isRunning {
-            return "waveform.slash"
-        }
-        return pipeline.isPaused ? "waveform.badge.minus" : "waveform"
+    private var iconName: String {
+        guard let p = appDelegate.pipeline else { return "waveform.slash" }
+        if !p.isRunning { return "waveform.slash" }
+        return p.isPaused ? "waveform.badge.minus" : "waveform"
     }
 }

@@ -54,11 +54,22 @@ struct MenuBarView: View {
 
             // Controls
             HStack(spacing: 8) {
-                Button {
-                    try? pipeline.togglePause()
-                } label: {
-                    Label(pipeline.isPaused ? "恢复" : "暂停",
-                          systemImage: pipeline.isPaused ? "play.fill" : "pause.fill")
+                if pipeline.isRunning {
+                    Button { try? pipeline.togglePause() } label: {
+                        Label(pipeline.isPaused ? "恢复" : "暂停",
+                              systemImage: pipeline.isPaused ? "play.fill" : "pause.fill")
+                    }
+                    Button { pipeline.stopRecording() } label: {
+                        Label("停止", systemImage: "stop.fill")
+                    }
+                    .foregroundStyle(.red)
+                } else if pipeline.canStartRecording {
+                    Button { Task { try? await pipeline.startRecording() } } label: {
+                        Label("开始录音", systemImage: "record.circle")
+                    }
+                    .foregroundStyle(.green)
+                } else {
+                    SettingsLink { Label("配置模型", systemImage: "gear") }
                 }
 
                 Spacer()

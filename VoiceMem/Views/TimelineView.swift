@@ -49,13 +49,14 @@ struct TimelineView: View {
 
     private var statusBar: some View {
         HStack(spacing: 10) {
+            // Status dot + text
             Circle()
-                .fill(pipeline.isRunning && !pipeline.isPaused ? .green : .gray)
+                .fill(pipeline.isRunning && !pipeline.isPaused ? Color.green : Color.gray)
                 .frame(width: 6, height: 6)
-            Text(pipeline.isRunning ? (pipeline.isPaused ? "已暂停" : "录制中") : "未运行")
+            Text(pipeline.statusText)
                 .font(.caption).foregroundStyle(.secondary)
 
-            if pipeline.vad.isSpeechDetected {
+            if pipeline.vad.isSpeechDetected && pipeline.isRunning {
                 HStack(spacing: 2) {
                     Image(systemName: "waveform")
                         .symbolEffect(.variableColor.iterative)
@@ -67,12 +68,35 @@ struct TimelineView: View {
 
             if pipeline.transcription.isLoading {
                 ProgressView().controlSize(.mini)
-                Text(pipeline.transcription.loadingProgress)
-                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Text("\(transcriptions.count) 条")
                 .font(.caption).foregroundStyle(.tertiary)
+
+            // Start / Stop button
+            if pipeline.isRunning {
+                Button {
+                    pipeline.stopRecording()
+                } label: {
+                    Label("停止", systemImage: "stop.circle.fill")
+                        .font(.caption.bold())
+                }
+                .buttonStyle(.plain).foregroundStyle(.red)
+            } else if pipeline.canStartRecording {
+                Button {
+                    Task { try? await pipeline.startRecording() }
+                } label: {
+                    Label("开始录音", systemImage: "record.circle")
+                        .font(.caption.bold())
+                }
+                .buttonStyle(.borderedProminent).controlSize(.small)
+            } else if !pipeline.transcription.isModelLoaded && !pipeline.transcription.isLoading {
+                SettingsLink {
+                    Label("配置模型", systemImage: "arrow.down.circle")
+                        .font(.caption.bold())
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 6)
         .background(.bar)
@@ -88,8 +112,24 @@ struct TimelineView: View {
                 Spacer()
             } else if transcriptions.isEmpty {
                 Spacer()
-                Image(systemName: "waveform.slash").font(.system(size: 36)).foregroundStyle(.quaternary)
-                Text("还没有语音记录").foregroundStyle(.secondary).padding(.top, 8)
+                if !pipeline.transcription.isModelLoaded && !pipeline.transcription.isLoading {
+                    // No model — guide to settings
+                    Image(systemName: "arrow.down.circle").font(.system(size: 36)).foregroundStyle(.quaternary)
+                    Text("需要先下载转录模型").font(.headline).padding(.top, 8)
+                    Text("前往 设置 → 转录 选择并下载模型").font(.caption).foregroundStyle(.tertiary)
+                    SettingsLink {
+                        Text("打开设置").font(.callout)
+                    }
+                    .buttonStyle(.borderedProminent).controlSize(.regular).padding(.top, 8)
+                } else if !pipeline.isRunning {
+                    // Model ready but not recording
+                    Image(systemName: "mic.slash").font(.system(size: 36)).foregroundStyle(.quaternary)
+                    Text("点击上方「开始录音」").foregroundStyle(.secondary).padding(.top, 8)
+                } else {
+                    // Recording but no transcriptions yet
+                    Image(systemName: "waveform").font(.system(size: 36)).foregroundStyle(.quaternary)
+                    Text("正在录音，等待语音…").foregroundStyle(.secondary).padding(.top, 8)
+                }
                 Spacer()
             } else {
                 ScrollView {

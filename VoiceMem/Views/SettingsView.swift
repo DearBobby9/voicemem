@@ -132,6 +132,9 @@ struct VADSettings: View {
 struct TranscriptionSettings: View {
     @AppStorage(AppSettingsKey.whisperModel) private var modelId = WhisperModel.defaultModel
     @AppStorage(AppSettingsKey.transcriptionLanguage) private var language = TranscriptionLanguage.auto.rawValue
+    @State private var isDownloading = false
+    @State private var downloadError: String?
+    @State private var downloadSuccess = false
 
     var body: some View {
         SettingsPageHeader(title: "转录", description: "WhisperKit 语音识别模型配置。更大的模型精度更高但占用更多资源。")
@@ -145,6 +148,7 @@ struct TranscriptionSettings: View {
                 }
                 .labelsHidden()
                 .frame(width: 220)
+                .disabled(isDownloading)
             }
             Divider()
             SettingsRow("语言偏好") {
@@ -158,6 +162,35 @@ struct TranscriptionSettings: View {
             }
         }
 
+        // Download button
+        SettingsGroup {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("下载 / 加载模型").font(.system(size: 13))
+                    if isDownloading {
+                        Text("正在下载中，请稍候…").font(.caption).foregroundStyle(.secondary)
+                    } else if downloadSuccess {
+                        Text("模型已就绪").font(.caption).foregroundStyle(.green)
+                    } else if let err = downloadError {
+                        Text(err).font(.caption).foregroundStyle(.red).lineLimit(2)
+                    } else {
+                        Text("首次使用需下载模型文件").font(.caption).foregroundStyle(.tertiary)
+                    }
+                }
+                Spacer()
+                if isDownloading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button(downloadSuccess ? "重新加载" : "下载模型") {
+                        downloadModel()
+                    }
+                    .controlSize(.small)
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+
         if let model = WhisperModel.allModels.first(where: { $0.id == modelId }) {
             SettingsGroup(title: "模型信息") {
                 SettingsInfoRow("模型大小", value: model.size)
@@ -168,8 +201,24 @@ struct TranscriptionSettings: View {
             }
         }
 
-        Text("更换模型后下次启动时生效。首次使用新模型需下载。")
-            .font(.caption).foregroundStyle(.tertiary).padding(.top, 6)
+        Text("选择模型后点击「下载模型」。下载完成后回到主窗口点击「开始录音」。")
+            .font(.caption).foregroundStyle(.tertiary).padding(.top, 2)
+    }
+
+    private func downloadModel() {
+        isDownloading = true
+        downloadError = nil
+        downloadSuccess = false
+        Task {
+            do {
+                let mgr = TranscriptionManager()
+                try await mgr.loadModel(modelId: modelId)
+                downloadSuccess = true
+            } catch {
+                downloadError = error.localizedDescription
+            }
+            isDownloading = false
+        }
     }
 }
 
